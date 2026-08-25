@@ -111,6 +111,16 @@ uv run copy2mihon inspect backup.tachibk
 uv run python -m pytest -v
 ```
 
+## 打包为可执行文件 (.exe)
+
+项目支持通过 PyInstaller 打包为单文件独立可执行程序：
+
+```bash
+uv run python -m PyInstaller --onefile --name copy2mihon --clean main.py
+```
+
+打包完成后，可执行文件位于 `dist/copy2mihon.exe`，无需 Python 环境即可独立运行。
+
 ## License
 
 MIT
