@@ -1,6 +1,13 @@
 """Tests for parser module."""
 
-from copy2mihon.parser import clean_path, extract_token, normalize_path_word, repair_mojibake, stable_fallback_key
+from copy2mihon.parser import (
+    clean_path,
+    extract_path_word,
+    extract_token,
+    normalize_path_word,
+    repair_mojibake,
+    stable_fallback_key,
+)
 
 
 def test_extract_token():
@@ -24,6 +31,27 @@ def test_normalize_path_word():
     assert normalize_path_word("BLEACH/") == "bleach"
     assert normalize_path_word("") == ""
     assert normalize_path_word(None) == ""
+
+
+def test_extract_path_word():
+    item1 = {"comic": {"path_word": "naruto"}}
+    assert extract_path_word(item1) == "naruto"
+
+    item2 = {"comic": {"uuid": "comic-uuid-123"}}
+    assert extract_path_word(item2) == "comic-uuid-123"
+
+    item3 = {"comic": {"id": 555}}
+    assert extract_path_word(item3) == "id_555"
+
+    item4 = {"comic": {"name": "Only Name Comic"}}
+    assert extract_path_word(item4) == "name_only name comic"
+
+    item5 = {"other_field": "val"}
+    pw5 = extract_path_word(item5, fallback=True)
+    assert pw5.startswith("nopathword_")
+
+    pw5_no_fallback = extract_path_word(item5, fallback=False)
+    assert pw5_no_fallback == ""
 
 
 def test_stable_fallback_key_determinism():

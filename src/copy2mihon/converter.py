@@ -20,7 +20,7 @@ from copy2mihon.models import (
     MihonManga,
     MihonSource,
 )
-from copy2mihon.parser import normalize_path_word, repair_mojibake, stable_fallback_key
+from copy2mihon.parser import extract_path_word, normalize_path_word, repair_mojibake
 
 logger = logging.getLogger(__name__)
 
@@ -215,20 +215,7 @@ def comic_dict_to_mihon_manga(
     if not isinstance(comic_data, dict):
         comic_data = {}
 
-    raw_pw = (
-        comic_data.get("path_word")
-        or comic_data.get("uuid")
-        or comic_data.get("url")
-        or item.get("url")
-        or (f"id_{comic_data.get('id')}" if comic_data.get("id") else None)
-        or (f"name_{comic_data.get('name')}" if comic_data.get("name") else None)
-        or ""
-    )
-    path_word = normalize_path_word(raw_pw)
-    if not path_word:
-        path_word = stable_fallback_key(item, comic_data)
-        logger.warning(f"Could not find valid path_word for item, using stable fallback key: {path_word}")
-
+    path_word = extract_path_word(item, comic_data, fallback=True)
     url = normalize_manga_url(path_word)
 
     title = repair_mojibake(
@@ -374,25 +361,14 @@ def convert_copymanga_all_to_backup(
     if browse_history_items:
         for b_item in browse_history_items:
             comic_data = b_item.get("comic", {})
-            raw_pw = (
-                comic_data.get("path_word")
-                or comic_data.get("uuid")
-                or (f"id_{comic_data.get('id')}" if comic_data.get("id") else None)
-                or (f"name_{comic_data.get('name')}" if comic_data.get("name") else None)
-                or ""
-            )
-            path_word = normalize_path_word(raw_pw)
-            if not path_word:
-                path_word = stable_fallback_key(b_item, comic_data)
-                logger.warning(f"Could not find valid path_word for history item, using stable fallback key: {path_word}")
-
+            path_word = extract_path_word(b_item, comic_data, fallback=True)
             url = normalize_manga_url(path_word)
 
             last_ch_id = b_item.get("last_chapter_id")
             last_ch_name = b_item.get("last_chapter_name")
-            read_time_ms = int(b_item.get("datetime_modifier_ms") or 0)
-            if not read_time_ms and b_item.get("datetime_modifier"):
-                read_time_ms = parse_datetime_to_ms(b_item.get("datetime_modifier"))
+            read_time_ms = parse_datetime_to_ms(
+                b_item.get("datetime_modifier") or comic_data.get("datetime_updated")
+            )
 
             if url in manga_by_url:
                 existing_manga = manga_by_url[url]

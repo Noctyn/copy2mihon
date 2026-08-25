@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 # Codepoint mapping for Windows-1252 / Latin-1 mis-decoded UTF-8 sequences
 CP1252_MAP = {
@@ -38,6 +41,10 @@ CP1252_MAP = {
     0x017E: 0x9E,
     0x0178: 0x9F,
 }
+
+MOJIBAKE_MARKERS_SET = frozenset(
+    {"ç", "¬", "å", "Ã", "Â", "é", "è", "æ", "§", "°", "¶", "·", "ä", "¸", "Š", "œ"}
+)
 
 
 def extract_token(token_or_auth: str) -> str:
@@ -85,13 +92,40 @@ def stable_fallback_key(item: Dict[str, Any], comic_data: Optional[Dict[str, Any
     return f"nopathword_{digest}"
 
 
+def extract_path_word(
+    item: Dict[str, Any],
+    comic_data: Optional[Dict[str, Any]] = None,
+    fallback: bool = True,
+) -> str:
+    """Extract and normalize comic path_word from item dictionary, optionally falling back to deterministic key."""
+    c_data = comic_data or (item.get("comic", item) if isinstance(item, dict) else {})
+    if not isinstance(c_data, dict):
+        c_data = {}
+
+    raw_pw = (
+        c_data.get("path_word")
+        or c_data.get("uuid")
+        or c_data.get("url")
+        or item.get("url")
+        or (f"id_{c_data.get('id')}" if c_data.get("id") else None)
+        or (f"name_{c_data.get('name')}" if c_data.get("name") else None)
+        or ""
+    )
+    pw = normalize_path_word(raw_pw)
+    if not pw and fallback:
+        pw = stable_fallback_key(item, c_data)
+        logger.warning(
+            f"Could not find valid path_word for item, generated stable fallback identifier: {pw}"
+        )
+    return pw
+
+
 def repair_mojibake(text: Optional[str]) -> str:
     """Detect and repair UTF-8 text incorrectly decoded as Latin-1 or CP1252."""
     if not text:
         return ""
 
-    mojibake_markers = ("ç", "¬", "å", "Ã", "Â", "é", "è", "æ", "§", "°", "¶", "·", "ä", "¸", "Š", "œ")
-    if not any(c in text for c in mojibake_markers):
+    if not (MOJIBAKE_MARKERS_SET & set(text)):
         return text
 
     for encoding in ("latin1", "cp1252"):

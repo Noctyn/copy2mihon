@@ -20,40 +20,16 @@ from copy2mihon.models import (
     DEFAULT_COPYMANGA_SOURCE_NAME,
     MihonManga,
 )
-from copy2mihon.parser import normalize_path_word, repair_mojibake
+from copy2mihon.parser import extract_path_word, normalize_path_word, repair_mojibake
 from copy2mihon.proto import schema_mihon_pb2
-from copy2mihon.proto.serializer import read_tachibk
+from copy2mihon.proto.serializer import (
+    copy_chapter_model_to_pb,
+    copy_history_model_to_pb,
+    copy_manga_model_to_pb,
+    read_tachibk,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _copy_manga_model_to_pb(
-    m_pb: schema_mihon_pb2.BackupManga,
-    model: MihonManga,
-) -> None:
-    """Populate a BackupManga Protobuf message with all fields from a MihonManga domain model."""
-    m_pb.source = model.source
-    m_pb.url = model.url
-    m_pb.title = model.title
-    m_pb.artist = model.artist or ""
-    m_pb.author = model.author or ""
-    m_pb.description = model.description or ""
-    if model.genre:
-        m_pb.genre.extend(model.genre)
-    m_pb.status = model.status
-    m_pb.thumbnailUrl = model.thumbnail_url or ""
-    m_pb.dateAdded = model.date_added
-    m_pb.viewer_flags = model.viewer_flags
-    m_pb.chapterFlags = model.chapter_flags
-    m_pb.updateStrategy = model.update_strategy
-    m_pb.favorite = model.favorite
-    m_pb.initialized = model.initialized
-    if model.version:
-        m_pb.version = model.version
-    if model.categories:
-        m_pb.categories.extend(model.categories)
-    if model.memo:
-        m_pb.memo.extend(model.memo)
 
 
 def merge_copymanga_into_backup_pb(
@@ -115,15 +91,7 @@ def merge_copymanga_into_backup_pb(
 
     # 3. Merge bookshelf items
     for item in collected_items:
-        comic_data = item.get("comic", item) if isinstance(item, dict) else {}
-        raw_pw = (
-            comic_data.get("path_word")
-            or comic_data.get("uuid")
-            or (f"id_{comic_data.get('id')}" if comic_data.get("id") else None)
-            or (f"name_{comic_data.get('name')}" if comic_data.get("name") else None)
-            or ""
-        )
-        pw = normalize_path_word(raw_pw)
+        pw = extract_path_word(item, fallback=True)
         if not pw:
             logger.warning(f"Skipping bookshelf item due to missing path_word/identifier: {item}")
             continue
@@ -146,7 +114,7 @@ def merge_copymanga_into_backup_pb(
                 is_favorite=True,
             )
             m_pb = backup_pb.backupManga.add()
-            _copy_manga_model_to_pb(m_pb, new_m)
+            copy_manga_model_to_pb(m_pb, new_m)
             manga_by_path_word[pw] = m_pb
             stats["new_manga_added"] += 1
 
@@ -154,23 +122,16 @@ def merge_copymanga_into_backup_pb(
     if browse_history_items:
         for b_item in browse_history_items:
             comic_data = b_item.get("comic", {})
-            raw_pw = (
-                comic_data.get("path_word")
-                or comic_data.get("uuid")
-                or (f"id_{comic_data.get('id')}" if comic_data.get("id") else None)
-                or (f"name_{comic_data.get('name')}" if comic_data.get("name") else None)
-                or ""
-            )
-            pw = normalize_path_word(raw_pw)
+            pw = extract_path_word(b_item, comic_data, fallback=True)
             if not pw:
                 logger.warning(f"Skipping history item due to missing path_word/identifier: {b_item}")
                 continue
 
             last_ch_id = b_item.get("last_chapter_id")
             last_ch_name = repair_mojibake(b_item.get("last_chapter_name", ""))
-            read_time_ms = int(b_item.get("datetime_modifier_ms") or 0)
-            if not read_time_ms and b_item.get("datetime_modifier"):
-                read_time_ms = parse_datetime_to_ms(b_item.get("datetime_modifier"))
+            read_time_ms = parse_datetime_to_ms(
+                b_item.get("datetime_modifier") or comic_data.get("datetime_updated")
+            )
 
             if pw in manga_by_path_word:
                 m = manga_by_path_word[pw]
@@ -212,9 +173,9 @@ def merge_copymanga_into_backup_pb(
                             if read_time_ms > 0 and read_time_ms > existing_hist.lastRead:
                                 existing_hist.lastRead = read_time_ms
                         else:
-                            fallback_time = read_time_ms
-                            if not fallback_time:
-                                fallback_time = parse_datetime_to_ms(comic_data.get("datetime_updated"))
+                            fallback_time = read_time_ms or parse_datetime_to_ms(
+                                comic_data.get("datetime_updated")
+                            )
                             hist_pb = m.history.add()
                             hist_pb.url = target_url
                             hist_pb.lastRead = fallback_time
@@ -229,19 +190,9 @@ def merge_copymanga_into_backup_pb(
                         )
                         if ch_model and hist_model:
                             ch_pb = m.chapters.add()
-                            ch_pb.url = ch_model.url
-                            ch_pb.name = ch_model.name
-                            ch_pb.read = True
-                            ch_pb.lastPageRead = 1
-                            ch_pb.dateFetch = ch_model.date_fetch
-                            ch_pb.dateUpload = ch_model.date_upload
-                            ch_pb.chapterNumber = ch_model.chapter_number
-                            ch_pb.sourceOrder = ch_model.source_order
-
+                            copy_chapter_model_to_pb(ch_pb, ch_model)
                             hist_pb = m.history.add()
-                            hist_pb.url = hist_model.url
-                            hist_pb.lastRead = hist_model.last_read
-                            hist_pb.readDuration = hist_model.read_duration
+                            copy_history_model_to_pb(hist_pb, hist_model)
             else:
                 if last_ch_id:
                     new_m = comic_dict_to_mihon_manga(
@@ -257,23 +208,13 @@ def merge_copymanga_into_backup_pb(
                         read_time_ms=read_time_ms,
                     )
                     m_pb = backup_pb.backupManga.add()
-                    _copy_manga_model_to_pb(m_pb, new_m)
+                    copy_manga_model_to_pb(m_pb, new_m)
 
                     if ch_model and hist_model:
                         ch_pb = m_pb.chapters.add()
-                        ch_pb.url = ch_model.url
-                        ch_pb.name = ch_model.name
-                        ch_pb.read = True
-                        ch_pb.lastPageRead = 1
-                        ch_pb.dateFetch = ch_model.date_fetch
-                        ch_pb.dateUpload = ch_model.date_upload
-                        ch_pb.chapterNumber = ch_model.chapter_number
-                        ch_pb.sourceOrder = ch_model.source_order
-
+                        copy_chapter_model_to_pb(ch_pb, ch_model)
                         hist_pb = m_pb.history.add()
-                        hist_pb.url = hist_model.url
-                        hist_pb.lastRead = hist_model.last_read
-                        hist_pb.readDuration = 0
+                        copy_history_model_to_pb(hist_pb, hist_model)
 
                     manga_by_path_word[pw] = m_pb
                     stats["new_manga_added"] += 1

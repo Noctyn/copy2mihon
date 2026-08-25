@@ -1,7 +1,8 @@
 """Tests for merger module."""
 
 import pytest
-from copy2mihon.merger import merge_copymanga_into_backup_pb, _copy_manga_model_to_pb
+from copy2mihon.merger import merge_copymanga_into_backup_pb
+from copy2mihon.proto.serializer import copy_manga_model_to_pb
 from copy2mihon.models import DEFAULT_COPYMANGA_SOURCE_ID
 from copy2mihon.proto import schema_mihon_pb2
 

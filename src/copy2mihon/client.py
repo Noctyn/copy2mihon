@@ -109,6 +109,9 @@ class CopyMangaClient:
 
                 # 3. Rate limiting (429) -> Retry with Retry-After header
                 if resp.status_code == 429:
+                    last_exception = RuntimeError(
+                        f"Rate limited (429) on {endpoint} after {self.max_retries} attempts."
+                    )
                     retry_after = resp.headers.get("retry-after")
                     sleep_sec = float(retry_after) if retry_after and retry_after.isdigit() else attempt * 2.0
                     logger.warning(

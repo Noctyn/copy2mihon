@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 import logging
+import os
 from pathlib import Path
 import sys
 from typing import Optional
@@ -12,7 +13,7 @@ from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-from rich.prompt import Prompt
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from copy2mihon import __version__
@@ -36,6 +37,7 @@ from copy2mihon.proto.serializer import export_to_json, export_to_tachibk, read_
 
 console = Console()
 
+
 def generate_default_filename(extension: str = "tachibk") -> str:
     """Generate timestamped default backup filename."""
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -57,10 +59,26 @@ def prompt_for_base_url(default_url: str = DEFAULT_BASE_URL) -> str:
     if sel_idx < len(KNOWN_DOMAINS):
         chosen_url = KNOWN_DOMAINS[sel_idx][0]
     else:
-        custom_input = Prompt.ask("请输入自定义域名 (如 copymanga.tv 或 https://custom-domain.com)")
+        custom_input = Prompt.ask("请输入自定义域名 (如 copy4000.com 或 https://custom-domain.com)")
         chosen_url = custom_input.strip()
 
     return normalize_base_url(chosen_url)
+
+
+def prompt_for_token(provided_token: Optional[str] = None) -> str:
+    """Get token from provided arg, environment variable, or masked prompt."""
+    token = provided_token or os.environ.get("COPYMANGA_TOKEN")
+    if token:
+        clean = extract_token(token)
+        if clean:
+            return clean
+
+    token_input = Prompt.ask("请输入 CopyManga Token", password=True)
+    clean = extract_token(token_input)
+    if not clean:
+        console.print("[red]错误: Token 不能为空。[/red]")
+        sys.exit(1)
+    return clean
 
 
 def _run_export_pipeline(
@@ -182,12 +200,13 @@ def _run_export_pipeline(
 
 def export_command(args: argparse.Namespace) -> None:
     """Handle export subcommand."""
+    token = prompt_for_token(getattr(args, "token", None))
     include_hist = not args.no_include_history
     if args.history_only:
         include_hist = True
 
     _run_export_pipeline(
-        token=args.token,
+        token=token,
         output=args.output or generate_default_filename("tachibk"),
         existing_backup=getattr(args, "existing_backup", None),
         category=args.category,
@@ -203,8 +222,9 @@ def export_command(args: argparse.Namespace) -> None:
 
 def merge_command(args: argparse.Namespace) -> None:
     """Handle merge subcommand."""
+    token = prompt_for_token(getattr(args, "token", None))
     _run_export_pipeline(
-        token=args.token,
+        token=token,
         output=args.output or f"{Path(clean_path(args.backup_file)).stem}_merged.tachibk",
         existing_backup=args.backup_file,
         category=args.category,
@@ -315,11 +335,7 @@ def interactive_wizard() -> None:
         return
 
     if choice in ("1", "2", "3"):
-        token_str = Prompt.ask("请输入 CopyManga Token")
-        if not token_str.strip():
-            console.print("[red]错误: Token 不能为空。[/red]")
-            return
-
+        token_str = prompt_for_token()
         base_url_input = prompt_for_base_url()
 
         cat_prompt = Prompt.ask(
@@ -328,6 +344,10 @@ def interactive_wizard() -> None:
         )
 
         out_name = Prompt.ask("输出文件名", default=generate_default_filename("tachibk"))
+
+        proxy_input = None
+        if Confirm.ask("是否需要配置网络代理 (如 HTTP / SOCKS5)?", default=False):
+            proxy_input = Prompt.ask("请输入代理地址 (如 http://127.0.0.1:7890)").strip() or None
 
         include_hist = choice in ("1", "3")
         hist_only = choice == "3"
@@ -342,15 +362,12 @@ def interactive_wizard() -> None:
             source_id=DEFAULT_COPYMANGA_SOURCE_ID,
             source_name=DEFAULT_COPYMANGA_SOURCE_NAME,
             base_url=base_url_input,
-            proxy=None,
+            proxy=proxy_input,
             export_json_flag=True,
         )
 
     elif choice == "4":
-        token_str = Prompt.ask("请输入 CopyManga Token")
-        if not token_str.strip():
-            console.print("[red]错误: Token 不能为空。[/red]")
-            return
+        token_str = prompt_for_token()
 
         bk_path_str = Prompt.ask("请输入现有 .tachibk 备份文件路径")
         if not bk_path_str.strip():
@@ -367,6 +384,10 @@ def interactive_wizard() -> None:
         default_out = f"{Path(clean_path(bk_path_str)).stem}_merged.tachibk"
         out_name = Prompt.ask("合并后的输出文件名", default=default_out)
 
+        proxy_input = None
+        if Confirm.ask("是否需要配置网络代理 (如 HTTP / SOCKS5)?", default=False):
+            proxy_input = Prompt.ask("请输入代理地址 (如 http://127.0.0.1:7890)").strip() or None
+
         _run_export_pipeline(
             token=token_str,
             output=out_name,
@@ -377,7 +398,7 @@ def interactive_wizard() -> None:
             source_id=DEFAULT_COPYMANGA_SOURCE_ID,
             source_name=DEFAULT_COPYMANGA_SOURCE_NAME,
             base_url=base_url_input,
-            proxy=None,
+            proxy=proxy_input,
             export_json_flag=False,
         )
 
@@ -418,23 +439,28 @@ def interactive_wizard() -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build CLI argument parser."""
+    """Build CLI argument parser with common options supported across subcommands."""
+    common_p = argparse.ArgumentParser(add_help=False)
+    common_p.add_argument(
+        "--debug", action="store_true", help="启用调试模式并输出完整错误堆栈"
+    )
+
     parser = argparse.ArgumentParser(
         prog="copy2mihon",
         description="导出拷贝漫画书架和历史记录为 Mihon 备份格式 (.tachibk)",
+        parents=[common_p],
     )
     parser.add_argument(
         "-v", "--version", action="version", version=f"%(prog)s {__version__}"
-    )
-    parser.add_argument(
-        "--debug", action="store_true", help="启用调试模式并输出完整错误堆栈"
     )
 
     subparsers = parser.add_subparsers(dest="command", help="子命令")
 
     # export
-    export_p = subparsers.add_parser("export", help="导出书架与历史记录")
-    export_p.add_argument("-t", "--token", required=True, help="拷贝漫画 Token")
+    export_p = subparsers.add_parser("export", help="导出书架与历史记录", parents=[common_p])
+    export_p.add_argument(
+        "-t", "--token", help="拷贝漫画 Token (也可通过环境变量 COPYMANGA_TOKEN 提供)"
+    )
     export_p.add_argument("-o", "--output", help="输出 .tachibk 文件路径")
     export_p.add_argument(
         "-b", "--existing-backup", dest="existing_backup", help="待合并的现有 .tachibk 备份文件路径"
@@ -463,8 +489,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # merge
-    merge_p = subparsers.add_parser("merge", help="合并云端数据到现有 .tachibk 备份")
-    merge_p.add_argument("-t", "--token", required=True, help="拷贝漫画 Token")
+    merge_p = subparsers.add_parser("merge", help="合并云端数据到现有 .tachibk 备份", parents=[common_p])
+    merge_p.add_argument(
+        "-t", "--token", help="拷贝漫画 Token (也可通过环境变量 COPYMANGA_TOKEN 提供)"
+    )
     merge_p.add_argument("-b", "--backup-file", required=True, help="现有的 .tachibk 备份文件路径")
     merge_p.add_argument("-o", "--output", help="输出文件路径")
     merge_p.add_argument(
@@ -482,7 +510,7 @@ def build_parser() -> argparse.ArgumentParser:
     merge_p.add_argument("--proxy", help="HTTP / SOCKS 代理地址")
 
     # convert
-    convert_p = subparsers.add_parser("convert", help="将本地 JSON 文件转为 .tachibk")
+    convert_p = subparsers.add_parser("convert", help="将本地 JSON 文件转为 .tachibk", parents=[common_p])
     convert_p.add_argument("input", help="输入的 JSON 文件路径")
     convert_p.add_argument("-o", "--output", help="输出的 .tachibk 路径")
     convert_p.add_argument(
@@ -496,29 +524,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # inspect
-    inspect_p = subparsers.add_parser("inspect", help="查看 .tachibk 备份文件内容")
+    inspect_p = subparsers.add_parser("inspect", help="查看 .tachibk 备份文件内容", parents=[common_p])
     inspect_p.add_argument("file", help="待查看的 .tachibk 文件路径")
 
     return parser
 
 
 def main() -> None:
-    """CLI Entrypoint."""
-    if len(sys.argv) == 1:
-        try:
-            interactive_wizard()
-        except KeyboardInterrupt:
-            console.print("\n操作已取消。")
-        return
-
-    parser = build_parser()
-    args = parser.parse_args()
-
-    debug_mode = getattr(args, "debug", False)
+    """CLI Entrypoint with unified exception and debug handling."""
+    debug_mode = "--debug" in sys.argv or os.environ.get("COPYMANGA_DEBUG") == "1"
     if debug_mode:
         logging.basicConfig(level=logging.DEBUG)
 
     try:
+        if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] == "--debug"):
+            interactive_wizard()
+            return
+
+        parser = build_parser()
+        args = parser.parse_args()
+
+        if getattr(args, "debug", False):
+            debug_mode = True
+            logging.basicConfig(level=logging.DEBUG)
+
         if args.command == "export":
             export_command(args)
         elif args.command == "merge":
@@ -529,6 +558,7 @@ def main() -> None:
             inspect_command(args)
         else:
             parser.print_help()
+
     except KeyboardInterrupt:
         console.print("\n操作已取消。")
     except Exception as e:

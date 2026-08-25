@@ -21,6 +21,75 @@ from copy2mihon.models import (
 from copy2mihon.proto import schema_mihon_pb2
 
 
+def copy_manga_model_to_pb(
+    m_pb: schema_mihon_pb2.BackupManga,
+    model: MihonManga,
+) -> None:
+    """Populate a BackupManga Protobuf message with all fields from a MihonManga domain model."""
+    m_pb.source = model.source
+    m_pb.url = model.url
+    if model.title:
+        m_pb.title = model.title
+    if model.author:
+        m_pb.author = model.author
+    if model.artist:
+        m_pb.artist = model.artist
+    if model.description:
+        m_pb.description = model.description
+    if model.genre:
+        m_pb.genre.extend(model.genre)
+    m_pb.status = model.status
+    if model.thumbnail_url:
+        m_pb.thumbnailUrl = model.thumbnail_url
+    if model.date_added:
+        m_pb.dateAdded = model.date_added
+    if model.categories:
+        m_pb.categories.extend(model.categories)
+    m_pb.favorite = model.favorite
+    m_pb.initialized = model.initialized
+    m_pb.chapterFlags = model.chapter_flags
+    m_pb.viewer_flags = model.viewer_flags
+    m_pb.updateStrategy = model.update_strategy
+    if model.version:
+        m_pb.version = model.version
+    if model.memo:
+        m_pb.memo.extend(model.memo)
+
+
+def copy_chapter_model_to_pb(
+    ch_pb: schema_mihon_pb2.BackupChapter,
+    model: MihonChapter,
+) -> None:
+    """Populate a BackupChapter Protobuf message with all fields from a MihonChapter domain model."""
+    ch_pb.url = model.url
+    ch_pb.name = model.name
+    if model.scanlator:
+        ch_pb.scanlator = model.scanlator
+    ch_pb.read = model.read
+    ch_pb.bookmark = model.bookmark
+    ch_pb.lastPageRead = model.last_page_read
+    ch_pb.dateFetch = model.date_fetch
+    ch_pb.dateUpload = model.date_upload
+    ch_pb.chapterNumber = model.chapter_number
+    ch_pb.sourceOrder = model.source_order
+    if model.last_modified_at:
+        ch_pb.lastModifiedAt = model.last_modified_at
+    if model.version:
+        ch_pb.version = model.version
+    if model.memo:
+        ch_pb.memo.extend(model.memo)
+
+
+def copy_history_model_to_pb(
+    h_pb: schema_mihon_pb2.BackupHistory,
+    model: MihonHistory,
+) -> None:
+    """Populate a BackupHistory Protobuf message with all fields from a MihonHistory domain model."""
+    h_pb.url = model.url
+    h_pb.lastRead = model.last_read
+    h_pb.readDuration = model.read_duration
+
+
 def build_protobuf_backup(backup: MihonBackup) -> schema_mihon_pb2.Backup:
     """Convert MihonBackup domain model into schema_mihon_pb2.Backup message."""
     backup_pb = schema_mihon_pb2.Backup()
@@ -52,173 +121,83 @@ def build_protobuf_backup(backup: MihonBackup) -> schema_mihon_pb2.Backup:
     # Manga entries
     for m in backup.backup_manga:
         m_pb = backup_pb.backupManga.add()
-        m_pb.source = m.source
-        m_pb.url = m.url
-        if m.title:
-            m_pb.title = m.title
-        if m.author:
-            m_pb.author = m.author
-        if m.artist:
-            m_pb.artist = m.artist
-        if m.description:
-            m_pb.description = m.description
-        if m.genre:
-            m_pb.genre.extend(m.genre)
-        m_pb.status = m.status
-        if m.thumbnail_url:
-            m_pb.thumbnailUrl = m.thumbnail_url
-        if m.date_added:
-            m_pb.dateAdded = m.date_added
-        if m.categories:
-            m_pb.categories.extend(m.categories)
-        m_pb.favorite = m.favorite
-        m_pb.initialized = m.initialized
-        m_pb.chapterFlags = m.chapter_flags
-        m_pb.viewer_flags = m.viewer_flags
-        m_pb.updateStrategy = m.update_strategy
-        if m.version:
-            m_pb.version = m.version
-        if m.memo:
-            m_pb.memo.extend(m.memo)
+        copy_manga_model_to_pb(m_pb, m)
 
         # Chapters
         for ch in m.chapters:
             ch_pb = m_pb.chapters.add()
-            ch_pb.url = ch.url
-            ch_pb.name = ch.name
-            if ch.scanlator:
-                ch_pb.scanlator = ch.scanlator
-            ch_pb.read = ch.read
-            ch_pb.bookmark = ch.bookmark
-            ch_pb.lastPageRead = ch.last_page_read
-            ch_pb.dateFetch = ch.date_fetch
-            ch_pb.dateUpload = ch.date_upload
-            ch_pb.chapterNumber = ch.chapter_number
-            ch_pb.sourceOrder = ch.source_order
-            if ch.last_modified_at:
-                ch_pb.lastModifiedAt = ch.last_modified_at
-            if ch.version:
-                ch_pb.version = ch.version
-            if ch.memo:
-                ch_pb.memo.extend(ch.memo)
+            copy_chapter_model_to_pb(ch_pb, ch)
 
         # History
         for h in m.history:
             h_pb = m_pb.history.add()
-            h_pb.url = h.url
-            h_pb.lastRead = h.last_read
-            h_pb.readDuration = h.read_duration
+            copy_history_model_to_pb(h_pb, h)
 
     return backup_pb
 
 
 def serialize_to_protobuf_bytes(backup: MihonBackup) -> bytes:
-    """Serialize MihonBackup to Protobuf binary bytes."""
-    pb_obj = build_protobuf_backup(backup)
-    return pb_obj.SerializeToString()
+    """Serialize MihonBackup model to uncompressed Protobuf binary bytes."""
+    pb = build_protobuf_backup(backup)
+    return pb.SerializeToString()
 
 
 def export_to_tachibk(backup: MihonBackup, output_path: Union[str, Path]) -> Path:
-    """Serialize MihonBackup and write as gzip compressed .tachibk file."""
+    """Serialize MihonBackup model and write as a gzip-compressed .tachibk file."""
     path = Path(output_path)
+    if not path.suffix:
+        path = path.with_suffix(".tachibk")
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    raw_bytes = serialize_to_protobuf_bytes(backup)
+    pb_bytes = serialize_to_protobuf_bytes(backup)
+
     with gzip.open(path, "wb") as f:
-        f.write(raw_bytes)
+        f.write(pb_bytes)
+
     return path
 
 
-def read_tachibk(file_path: Union[str, Path]) -> schema_mihon_pb2.Backup:
-    """Read a gzip compressed .tachibk file and parse it into a schema_mihon_pb2.Backup message."""
-    path = Path(file_path)
+def read_tachibk(input_path: Union[str, Path]) -> schema_mihon_pb2.Backup:
+    """Read and decompress a .tachibk file into a Protobuf Backup message."""
+    path = Path(input_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Backup file not found: {path}")
+
     with gzip.open(path, "rb") as f:
-        data = f.read()
-    backup_pb = schema_mihon_pb2.Backup()
-    backup_pb.ParseFromString(data)
-    return backup_pb
+        decompressed_bytes = f.read()
+
+    backup = schema_mihon_pb2.Backup()
+    backup.ParseFromString(decompressed_bytes)
+    return backup
 
 
 def export_to_json(backup: MihonBackup, output_path: Union[str, Path]) -> Path:
-    """Export MihonBackup as a JSON file."""
+    """Export MihonBackup to a readable JSON representation."""
     path = Path(output_path)
+    if not path.suffix:
+        path = path.with_suffix(".json")
+
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    def _convert_model(obj: Any) -> Any:
+    def _convert_item(obj: Any) -> Any:
         if isinstance(obj, bytes):
             return base64.b64encode(obj).decode("ascii")
         if isinstance(obj, list):
-            return [_convert_model(i) for i in obj]
+            return [_convert_item(i) for i in obj]
         if isinstance(obj, dict):
-            return {k: _convert_model(v) for k, v in obj.items()}
+            return {k: _convert_item(v) for k, v in obj.items()}
         return obj
 
-    data = {
-        "backupManga": [
-            {
-                "source": m.source,
-                "url": m.url,
-                "title": m.title,
-                "artist": m.artist,
-                "author": m.author,
-                "description": m.description,
-                "genre": m.genre,
-                "status": m.status,
-                "thumbnailUrl": m.thumbnail_url,
-                "dateAdded": m.date_added,
-                "viewerFlags": m.viewer_flags,
-                "chapterFlags": m.chapter_flags,
-                "updateStrategy": m.update_strategy,
-                "favorite": m.favorite,
-                "initialized": m.initialized,
-                "categories": m.categories,
-                "version": m.version,
-                "chapters": [
-                    {
-                        "url": ch.url,
-                        "name": ch.name,
-                        "scanlator": ch.scanlator,
-                        "read": ch.read,
-                        "bookmark": ch.bookmark,
-                        "lastPageRead": ch.last_page_read,
-                        "dateFetch": ch.date_fetch,
-                        "dateUpload": ch.date_upload,
-                        "chapterNumber": ch.chapter_number,
-                        "sourceOrder": ch.source_order,
-                        "memo": [_convert_model(item) for item in ch.memo],
-                    }
-                    for ch in m.chapters
-                ],
-                "history": [
-                    {
-                        "url": h.url,
-                        "lastRead": h.last_read,
-                        "readDuration": h.read_duration,
-                    }
-                    for h in m.history
-                ],
-                "memo": [_convert_model(item) for item in m.memo],
-            }
-            for m in backup.backup_manga
-        ],
-        "backupCategories": [
-            {
-                "name": cat.name,
-                "id": cat.id,
-                "order": cat.order,
-                "flags": cat.flags,
-            }
-            for cat in backup.backup_categories
-        ],
-        "backupSources": [
-            {
-                "sourceId": src.source_id,
-                "name": src.name,
-            }
-            for src in backup.backup_sources
-        ],
+    data = backup.model_dump(by_alias=True)
+    clean_data = _convert_item(data)
+
+    out_dict = {
+        "backupManga": clean_data.get("backup_manga", clean_data.get("backupManga", [])),
+        "backupCategories": clean_data.get("backup_categories", clean_data.get("backupCategories", [])),
+        "backupSources": clean_data.get("backup_sources", clean_data.get("backupSources", [])),
     }
 
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(out_dict, f, ensure_ascii=False, indent=2)
 
     return path
