@@ -36,15 +36,6 @@ from copy2mihon.proto.serializer import export_to_json, export_to_tachibk, read_
 
 console = Console()
 
-PRESET_DOMAINS = [
-    ("https://www.mangacopy.com", "官方主站 (默认)"),
-    ("https://www.copy4000.com", "官方镜像 1 (可用)"),
-    ("https://2026copy.com", "官方镜像 2 (可用)"),
-    ("https://api.mangacopy.com", "官方 API 节点"),
-    ("https://www.copymanga.site", "备用镜像站"),
-]
-
-
 def generate_default_filename(extension: str = "tachibk") -> str:
     """Generate timestamped default backup filename."""
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -54,17 +45,17 @@ def generate_default_filename(extension: str = "tachibk") -> str:
 def prompt_for_base_url(default_url: str = DEFAULT_BASE_URL) -> str:
     """Interactive prompt for choosing a domain preset or entering a custom domain."""
     console.print("\n请选择拷贝漫画 API 域名 / 镜像站：")
-    for idx, (domain, desc) in enumerate(PRESET_DOMAINS, start=1):
+    for idx, (domain, desc) in enumerate(KNOWN_DOMAINS, start=1):
         console.print(f"  [bold yellow]{idx}[/bold yellow]. {domain} ({desc})")
-    custom_opt_idx = len(PRESET_DOMAINS) + 1
+    custom_opt_idx = len(KNOWN_DOMAINS) + 1
     console.print(f"  [bold yellow]{custom_opt_idx}[/bold yellow]. 自定义输入其他域名\n")
 
     choices = [str(i) for i in range(1, custom_opt_idx + 1)]
     sel = Prompt.ask("请输入选项", choices=choices, default="1")
 
     sel_idx = int(sel) - 1
-    if sel_idx < len(PRESET_DOMAINS):
-        chosen_url = PRESET_DOMAINS[sel_idx][0]
+    if sel_idx < len(KNOWN_DOMAINS):
+        chosen_url = KNOWN_DOMAINS[sel_idx][0]
     else:
         custom_input = Prompt.ask("请输入自定义域名 (如 copymanga.tv 或 https://custom-domain.com)")
         chosen_url = custom_input.strip()

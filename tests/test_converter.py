@@ -87,6 +87,25 @@ def test_url_collision_fallback_when_path_word_missing():
     assert backup.backup_manga[1].title == "Dirty Comic 2"
 
 
+def test_convert_copymanga_all_to_backup_matches_bookshelf_and_history_without_path_word():
+    """Verify that bookshelf and history items for the same comic without path_word merge into 1 entry."""
+    book_item = {"comic": {"name": "No Path Comic", "id": 8888}}
+    hist_item = {
+        "comic": {"name": "No Path Comic", "id": 8888},
+        "last_chapter_id": "uuid-99",
+        "last_chapter_name": "第99话",
+    }
+
+    backup = convert_copymanga_all_to_backup(
+        collected_items=[book_item],
+        browse_history_items=[hist_item],
+    )
+    assert len(backup.backup_manga) == 1
+    assert backup.backup_manga[0].favorite is True
+    assert len(backup.backup_manga[0].chapters) == 1
+    assert backup.backup_manga[0].chapters[0].name == "第99话"
+
+
 def test_convert_copymanga_all_to_backup_with_custom_multiple_categories():
     collected = [
         {"comic": {"name": "Manga 1", "path_word": "m1"}},

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import logging
 from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -22,6 +23,8 @@ from copy2mihon.models import (
 from copy2mihon.parser import normalize_path_word, repair_mojibake
 from copy2mihon.proto import schema_mihon_pb2
 from copy2mihon.proto.serializer import read_tachibk
+
+logger = logging.getLogger(__name__)
 
 
 def _copy_manga_model_to_pb(
@@ -122,6 +125,7 @@ def merge_copymanga_into_backup_pb(
         )
         pw = normalize_path_word(raw_pw)
         if not pw:
+            logger.warning(f"Skipping bookshelf item due to missing path_word/identifier: {item}")
             continue
 
         if pw in manga_by_path_word:
@@ -159,6 +163,7 @@ def merge_copymanga_into_backup_pb(
             )
             pw = normalize_path_word(raw_pw)
             if not pw:
+                logger.warning(f"Skipping history item due to missing path_word/identifier: {b_item}")
                 continue
 
             last_ch_id = b_item.get("last_chapter_id")

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
-from typing import Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 # Codepoint mapping for Windows-1252 / Latin-1 mis-decoded UTF-8 sequences
@@ -64,6 +66,23 @@ def normalize_path_word(raw: Optional[str]) -> str:
     if clean.lower().startswith("comic/"):
         clean = clean[6:].strip("/")
     return clean.lower()
+
+
+def stable_fallback_key(item: Dict[str, Any], comic_data: Optional[Dict[str, Any]] = None) -> str:
+    """Generate a deterministic, process-independent fallback identifier when path_word/uuid is missing."""
+    c_data = comic_data or (item.get("comic", item) if isinstance(item, dict) else {})
+    if not isinstance(c_data, dict):
+        c_data = {}
+    seed = (
+        c_data.get("name")
+        or c_data.get("title")
+        or (f"id_{c_data.get('id')}" if c_data.get("id") else None)
+        or item.get("title")
+        or (f"id_{item.get('id')}" if item.get("id") else None)
+        or json.dumps(item, sort_keys=True, default=str)
+    )
+    digest = hashlib.sha1(str(seed).encode("utf-8", errors="ignore")).hexdigest()[:16]
+    return f"nopathword_{digest}"
 
 
 def repair_mojibake(text: Optional[str]) -> str:

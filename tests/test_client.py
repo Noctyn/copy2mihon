@@ -110,6 +110,29 @@ def test_client_unauthorized_error_non_retryable(monkeypatch):
     assert call_count == 1
 
 
+def test_client_bad_request_error_non_retryable(monkeypatch):
+    client = CopyMangaClient(token="valid_token")
+    call_count = 0
+
+    def mock_get(endpoint, params=None):
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(
+            status_code=400,
+            text="Bad Request: invalid offset",
+            request=httpx.Request("GET", endpoint),
+        )
+
+    monkeypatch.setattr(client.client, "get", mock_get)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        client.get_collect_comics_page()
+
+    assert "Client Error (400)" in str(exc_info.value)
+    # 400 should NOT be retried (fail fast)
+    assert call_count == 1
+
+
 def test_client_server_error_retry_success(monkeypatch):
     client = CopyMangaClient(token="valid_token", max_retries=3)
     call_count = 0

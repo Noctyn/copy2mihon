@@ -20,7 +20,7 @@ from copy2mihon.models import (
     MihonManga,
     MihonSource,
 )
-from copy2mihon.parser import normalize_path_word, repair_mojibake
+from copy2mihon.parser import normalize_path_word, repair_mojibake, stable_fallback_key
 
 logger = logging.getLogger(__name__)
 
@@ -226,9 +226,8 @@ def comic_dict_to_mihon_manga(
     )
     path_word = normalize_path_word(raw_pw)
     if not path_word:
-        # Fallback to unique hash identifier to prevent key collisions
-        path_word = f"manga_{abs(hash(str(item)))}"
-        logger.warning(f"Could not find valid path_word for item, using fallback: {path_word}")
+        path_word = stable_fallback_key(item, comic_data)
+        logger.warning(f"Could not find valid path_word for item, using stable fallback key: {path_word}")
 
     url = normalize_manga_url(path_word)
 
@@ -384,7 +383,8 @@ def convert_copymanga_all_to_backup(
             )
             path_word = normalize_path_word(raw_pw)
             if not path_word:
-                path_word = f"history_{abs(hash(str(b_item)))}"
+                path_word = stable_fallback_key(b_item, comic_data)
+                logger.warning(f"Could not find valid path_word for history item, using stable fallback key: {path_word}")
 
             url = normalize_manga_url(path_word)
 

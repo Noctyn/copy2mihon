@@ -1,6 +1,6 @@
 """Tests for parser module."""
 
-from copy2mihon.parser import clean_path, extract_token, normalize_path_word, repair_mojibake
+from copy2mihon.parser import clean_path, extract_token, normalize_path_word, repair_mojibake, stable_fallback_key
 
 
 def test_extract_token():
@@ -24,6 +24,29 @@ def test_normalize_path_word():
     assert normalize_path_word("BLEACH/") == "bleach"
     assert normalize_path_word("") == ""
     assert normalize_path_word(None) == ""
+
+
+def test_stable_fallback_key_determinism():
+    """Verify that stable_fallback_key produces identical, deterministic output across calls and between bookshelf and history formats."""
+    bookshelf_item = {
+        "comic": {
+            "name": "海贼王特别篇",
+            "id": 999,
+        }
+    }
+    history_item = {
+        "comic": {
+            "name": "海贼王特别篇",
+            "id": 999,
+        },
+        "last_chapter_id": "ch1",
+    }
+
+    key1 = stable_fallback_key(bookshelf_item)
+    key2 = stable_fallback_key(history_item)
+
+    assert key1.startswith("nopathword_")
+    assert key1 == key2  # Same title/id MUST map to identical fallback key
 
 
 def test_repair_mojibake():

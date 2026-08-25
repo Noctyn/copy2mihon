@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import httpx
 
 from copy2mihon.parser import extract_token
@@ -19,15 +18,16 @@ DEFAULT_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 )
 
-KNOWN_DOMAINS = [
-    "https://www.mangacopy.com",
-    "https://www.copy4000.com",
-    "https://2026copy.com",
-    "https://api.mangacopy.com",
-    "https://www.copymanga.site",
-    "https://www.copymanga.tv",
-    "https://api.copymanga.org",
-    "https://copymanga.com",
+# Authoritative single-source list of known CopyManga domains with human-friendly descriptions
+KNOWN_DOMAINS: List[Tuple[str, str]] = [
+    ("https://www.mangacopy.com", "官方主站 (默认)"),
+    ("https://www.copy4000.com", "官方镜像 1 (可用)"),
+    ("https://2026copy.com", "官方镜像 2 (可用)"),
+    ("https://api.mangacopy.com", "官方 API 节点"),
+    ("https://www.copymanga.site", "备用镜像站"),
+    ("https://www.copymanga.tv", "备用镜像站 (可能失效)"),
+    ("https://api.copymanga.org", "备用镜像站 (可能失效)"),
+    ("https://copymanga.com", "备用镜像站 (可能失效)"),
 ]
 
 
@@ -99,19 +99,25 @@ class CopyMangaClient:
                 if resp.status_code == 401:
                     raise PermissionError("Unauthorized (401): 拷贝漫画 Token 无效或已过期。")
                 if resp.status_code == 403:
-                    raise PermissionError(f"Forbidden (403): 访问被拒绝，请检查 Token 或 IP 限制。")
+                    raise PermissionError("Forbidden (403): 访问被拒绝，请检查 Token 或 IP 限制。")
                 if resp.status_code == 404:
                     raise FileNotFoundError(f"Not Found (404): 接口不存在: {endpoint}")
 
-                # 2. Rate limiting (429) -> Retry with Retry-After header
+                # 2. Other 4xx Client Errors (e.g. 400 Bad Request) -> Fail fast without retrying
+                if 400 <= resp.status_code < 500 and resp.status_code != 429:
+                    raise RuntimeError(f"Client Error ({resp.status_code}): {resp.text}")
+
+                # 3. Rate limiting (429) -> Retry with Retry-After header
                 if resp.status_code == 429:
                     retry_after = resp.headers.get("retry-after")
                     sleep_sec = float(retry_after) if retry_after and retry_after.isdigit() else attempt * 2.0
-                    logger.warning(f"Rate limited (429). Sleeping {sleep_sec}s before retry ({attempt}/{self.max_retries})...")
+                    logger.warning(
+                        f"Rate limited (429). Sleeping {sleep_sec}s before retry ({attempt}/{self.max_retries})..."
+                    )
                     time.sleep(sleep_sec)
                     continue
 
-                # 3. Server Errors (5xx) -> Retry with backoff
+                # 4. Server Errors (5xx) -> Retry with backoff
                 if resp.status_code in (500, 502, 503, 504):
                     raise httpx.HTTPStatusError(
                         f"Server Error ({resp.status_code})",
@@ -121,13 +127,10 @@ class CopyMangaClient:
 
                 resp.raise_for_status()
 
-                # Parse JSON payload
-                try:
-                    data = json.loads(resp.content.decode("utf-8"))
-                except Exception:
-                    data = resp.json()
+                # 5. Parse JSON payload
+                data = resp.json()
 
-                # 4. API Business-Level Error Handling (Deterministic, do not retry unless transient)
+                # 6. API Business-Level Error Handling (Deterministic, do not retry unless transient)
                 if isinstance(data, dict) and data.get("code") != 200 and data.get("code") is not None:
                     code = data.get("code")
                     msg = data.get("message", "Unknown error")
