@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import base64
 from datetime import datetime, timezone
 import json
+import logging
 from pathlib import Path
 import re
 import time
@@ -20,7 +20,9 @@ from copy2mihon.models import (
     MihonManga,
     MihonSource,
 )
-from copy2mihon.parser import repair_mojibake
+from copy2mihon.parser import normalize_path_word, repair_mojibake
+
+logger = logging.getLogger(__name__)
 
 
 def parse_datetime_to_ms(dt_val: Any) -> int:
@@ -152,20 +154,10 @@ def normalize_status(status_val: Any) -> int:
 
 def normalize_manga_url(path_word: str) -> str:
     """Format manga URL as '/comic/{path_word}'."""
-    if not path_word:
-        return "/comic/unknown"
-
-    clean = path_word.strip()
-    if clean.startswith("http://") or clean.startswith("https://"):
-        from urllib.parse import urlparse
-        parsed = urlparse(clean)
-        clean = parsed.path
-
-    clean = clean.lstrip("/")
-    if not clean.startswith("comic/"):
-        clean = f"comic/{clean}"
-
-    return f"/{clean}"
+    clean = normalize_path_word(path_word)
+    if not clean:
+        return ""
+    return f"/comic/{clean}"
 
 
 def create_chapter_and_history(
@@ -178,7 +170,7 @@ def create_chapter_and_history(
     if not chapter_id:
         return None, None
 
-    clean_path = path_word.strip().lstrip("/").replace("comic/", "")
+    clean_path = normalize_path_word(path_word)
     chapter_url = f"/comic/{clean_path}/chapter/{chapter_id}"
     ch_name = repair_mojibake(chapter_name) or "阅读历史"
     time_ms = read_time_ms or int(time.time() * 1000)
@@ -223,13 +215,21 @@ def comic_dict_to_mihon_manga(
     if not isinstance(comic_data, dict):
         comic_data = {}
 
-    path_word = (
+    raw_pw = (
         comic_data.get("path_word")
         or comic_data.get("uuid")
         or comic_data.get("url")
         or item.get("url")
+        or (f"id_{comic_data.get('id')}" if comic_data.get("id") else None)
+        or (f"name_{comic_data.get('name')}" if comic_data.get("name") else None)
         or ""
     )
+    path_word = normalize_path_word(raw_pw)
+    if not path_word:
+        # Fallback to unique hash identifier to prevent key collisions
+        path_word = f"manga_{abs(hash(str(item)))}"
+        logger.warning(f"Could not find valid path_word for item, using fallback: {path_word}")
+
     url = normalize_manga_url(path_word)
 
     title = repair_mojibake(
@@ -369,16 +369,23 @@ def convert_copymanga_all_to_backup(
             category_ids=category_orders,
             is_favorite=True,
         )
-        manga_by_url[manga.url] = manga
+        if manga.url:
+            manga_by_url[manga.url] = manga
 
     if browse_history_items:
         for b_item in browse_history_items:
             comic_data = b_item.get("comic", {})
-            path_word = (
+            raw_pw = (
                 comic_data.get("path_word")
                 or comic_data.get("uuid")
+                or (f"id_{comic_data.get('id')}" if comic_data.get("id") else None)
+                or (f"name_{comic_data.get('name')}" if comic_data.get("name") else None)
                 or ""
             )
+            path_word = normalize_path_word(raw_pw)
+            if not path_word:
+                path_word = f"history_{abs(hash(str(b_item)))}"
+
             url = normalize_manga_url(path_word)
 
             last_ch_id = b_item.get("last_chapter_id")
@@ -407,7 +414,8 @@ def convert_copymanga_all_to_backup(
                     category_ids=[],
                     is_favorite=False,
                 )
-                manga_by_url[url] = manga
+                if manga.url:
+                    manga_by_url[manga.url] = manga
 
     sources = [
         MihonSource(

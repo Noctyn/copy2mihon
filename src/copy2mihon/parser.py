@@ -1,9 +1,10 @@
-"""Token extraction, path cleaning, and text normalization utilities."""
+"""Token extraction, path cleaning, text normalization, and path_word parsing utilities."""
 
 from __future__ import annotations
 
 import re
 from typing import Optional
+from urllib.parse import urlparse
 
 # Codepoint mapping for Windows-1252 / Latin-1 mis-decoded UTF-8 sequences
 CP1252_MAP = {
@@ -50,6 +51,19 @@ def extract_token(token_or_auth: str) -> str:
 def clean_path(path_str: str) -> str:
     """Strip surrounding whitespace and quotes from a filesystem path."""
     return path_str.strip().strip("\"'")
+
+
+def normalize_path_word(raw: Optional[str]) -> str:
+    """Normalize a CopyManga comic path_word or URL segment into a clean lowercase identifier."""
+    if not raw:
+        return ""
+    clean = str(raw).strip().strip("/")
+    if clean.startswith("http://") or clean.startswith("https://"):
+        parsed = urlparse(clean)
+        clean = parsed.path.strip("/")
+    if clean.lower().startswith("comic/"):
+        clean = clean[6:].strip("/")
+    return clean.lower()
 
 
 def repair_mojibake(text: Optional[str]) -> str:

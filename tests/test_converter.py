@@ -24,6 +24,7 @@ def test_normalize_manga_url():
     assert normalize_manga_url("onepiece") == "/comic/onepiece"
     assert normalize_manga_url("/comic/onepiece") == "/comic/onepiece"
     assert normalize_manga_url("https://www.mangacopy.com/comic/onepiece") == "/comic/onepiece"
+    assert normalize_manga_url("") == ""
 
 
 def test_normalize_status():
@@ -69,6 +70,21 @@ def test_comic_dict_to_mihon_manga_raw_comic():
     assert "热血" in manga.genre
     assert manga.categories == [0]
     assert manga.source == DEFAULT_COPYMANGA_SOURCE_ID
+
+
+def test_url_collision_fallback_when_path_word_missing():
+    """Verify that multiple items without path_word do not overwrite each other."""
+    item1 = {"comic": {"name": "Dirty Comic 1", "id": 1001}}
+    item2 = {"comic": {"name": "Dirty Comic 2", "id": 1002}}
+
+    backup = convert_copymanga_all_to_backup(
+        collected_items=[item1, item2],
+        browse_history_items=None,
+    )
+    assert len(backup.backup_manga) == 2
+    assert backup.backup_manga[0].url != backup.backup_manga[1].url
+    assert backup.backup_manga[0].title == "Dirty Comic 1"
+    assert backup.backup_manga[1].title == "Dirty Comic 2"
 
 
 def test_convert_copymanga_all_to_backup_with_custom_multiple_categories():

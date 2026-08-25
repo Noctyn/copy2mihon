@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import logging
 from pathlib import Path
 import sys
 from typing import Optional
@@ -127,7 +128,7 @@ def _run_export_pipeline(
                 console.print(f"[green]已获取 {len(collected_comics)} 本书架漫画[/green]")
 
             # 2. Fetch history
-            if include_history or history_only:
+            if include_history:
                 history_task = progress.add_task("获取阅读历史...", total=100)
 
                 def update_history_progress(completed: int, total: int):
@@ -434,6 +435,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-v", "--version", action="version", version=f"%(prog)s {__version__}"
     )
+    parser.add_argument(
+        "--debug", action="store_true", help="启用调试模式并输出完整错误堆栈"
+    )
 
     subparsers = parser.add_subparsers(dest="command", help="子命令")
 
@@ -446,9 +450,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     export_p.add_argument(
         "-c", "--category", default="拷贝漫画", help="导入 Mihon 后的分类名 (传 none 禁用分类)"
-    )
-    export_p.add_argument(
-        "--include-history", action="store_true", default=True, help="包含阅读历史记录"
     )
     export_p.add_argument(
         "--no-include-history", action="store_true", help="不包含阅读历史记录"
@@ -522,6 +523,10 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
+    debug_mode = getattr(args, "debug", False)
+    if debug_mode:
+        logging.basicConfig(level=logging.DEBUG)
+
     try:
         if args.command == "export":
             export_command(args)
@@ -536,7 +541,11 @@ def main() -> None:
     except KeyboardInterrupt:
         console.print("\n操作已取消。")
     except Exception as e:
-        console.print(f"[red]执行出错: {e}[/red]")
+        if debug_mode:
+            console.print_exception()
+        else:
+            console.print(f"[red]执行出错: {e}[/red]")
+            console.print("[dim]提示: 添加 --debug 参数可查看完整错误堆栈。[/dim]")
         sys.exit(1)
 
 

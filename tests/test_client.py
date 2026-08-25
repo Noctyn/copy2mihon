@@ -88,10 +88,13 @@ def test_client_fetch_all_browse_history_pagination(monkeypatch):
     assert results[0]["comic"]["name"] == "History Comic 1"
 
 
-def test_client_unauthorized_error(monkeypatch):
+def test_client_unauthorized_error_non_retryable(monkeypatch):
     client = CopyMangaClient(token="invalid_token")
+    call_count = 0
 
     def mock_get(endpoint, params=None):
+        nonlocal call_count
+        call_count += 1
         return httpx.Response(
             status_code=401,
             json={"code": 401, "message": "Invalid token"},
@@ -102,3 +105,31 @@ def test_client_unauthorized_error(monkeypatch):
 
     with pytest.raises(PermissionError):
         client.get_collect_comics_page()
+
+    # 401 should NOT be retried (fail fast)
+    assert call_count == 1
+
+
+def test_client_server_error_retry_success(monkeypatch):
+    client = CopyMangaClient(token="valid_token", max_retries=3)
+    call_count = 0
+
+    def mock_get(endpoint, params=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            return httpx.Response(
+                status_code=502,
+                request=httpx.Request("GET", endpoint),
+            )
+        return httpx.Response(
+            status_code=200,
+            json={"code": 200, "results": {"list": [], "total": 0}},
+            request=httpx.Request("GET", endpoint),
+        )
+
+    monkeypatch.setattr(client.client, "get", mock_get)
+
+    res = client.get_collect_comics_page()
+    assert res["code"] == 200
+    assert call_count == 3

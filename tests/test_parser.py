@@ -1,6 +1,6 @@
 """Tests for parser module."""
 
-from copy2mihon.parser import clean_path, extract_token, repair_mojibake
+from copy2mihon.parser import clean_path, extract_token, normalize_path_word, repair_mojibake
 
 
 def test_extract_token():
@@ -15,6 +15,15 @@ def test_clean_path():
     assert clean_path('"D:/test/path.txt"') == "D:/test/path.txt"
     assert clean_path("  'C:/path'  ") == "C:/path"
     assert clean_path("normal_path") == "normal_path"
+
+
+def test_normalize_path_word():
+    assert normalize_path_word("onepiece") == "onepiece"
+    assert normalize_path_word("/comic/onepiece/") == "onepiece"
+    assert normalize_path_word("https://www.mangacopy.com/comic/naruto") == "naruto"
+    assert normalize_path_word("BLEACH/") == "bleach"
+    assert normalize_path_word("") == ""
+    assert normalize_path_word(None) == ""
 
 
 def test_repair_mojibake():
