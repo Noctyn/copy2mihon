@@ -180,10 +180,11 @@ class CopyMangaClient:
                 if attempt < self.max_retries:
                     time.sleep(min(attempt * 1.5, 6.0))
 
-            except Exception as other_err:
-                last_exception = other_err
+            except ValueError as decode_err:
+                # Malformed JSON payload (e.g. HTML error page with HTTP 200) -> transient, retry
+                last_exception = decode_err
                 logger.warning(
-                    f"Unexpected error on {endpoint} ({attempt}/{self.max_retries}): {other_err}."
+                    f"Invalid JSON response on {endpoint} ({attempt}/{self.max_retries}): {decode_err}. Retrying..."
                 )
                 if attempt < self.max_retries:
                     time.sleep(min(attempt * 1.5, 6.0))

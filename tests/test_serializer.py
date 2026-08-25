@@ -68,7 +68,21 @@ def test_export_to_json(tmp_path):
                 source=12345,
                 url="/comic/test",
                 title="Test Manga",
+                thumbnail_url="https://example.com/cover.jpg",
                 categories=[0],
+                chapters=[
+                    MihonChapter(
+                        url="/comic/test/chapter/ch1",
+                        name="Ch 1",
+                        last_page_read=1,
+                    )
+                ],
+                history=[
+                    MihonHistory(
+                        url="/comic/test/chapter/ch1",
+                        last_read=1700000000000,
+                    )
+                ],
             )
         ],
     )
@@ -82,4 +96,18 @@ def test_export_to_json(tmp_path):
 
     assert "backupManga" in data
     assert len(data["backupManga"]) == 1
-    assert data["backupManga"][0]["title"] == "Test Manga"
+    manga = data["backupManga"][0]
+    assert manga["title"] == "Test Manga"
+    # Nested fields must use camelCase keys matching the Mihon backup schema
+    assert "thumbnailUrl" in manga
+    assert "thumbnail_url" not in manga
+    assert "dateAdded" in manga
+    assert "date_added" not in manga
+    assert "chapterFlags" in manga
+    assert manga["chapters"][0]["lastPageRead"] == 1
+    assert "last_page_read" not in manga["chapters"][0]
+    assert "dateFetch" in manga["chapters"][0]
+    assert manga["history"][0]["lastRead"] == 1700000000000
+    assert "readDuration" in manga["history"][0]
+    assert data["backupSources"][0]["sourceId"] == 12345
+    assert "source_id" not in data["backupSources"][0]

@@ -6,7 +6,7 @@ import base64
 import gzip
 import json
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Union
 
 from copy2mihon.models import (
     DEFAULT_COPYMANGA_SOURCE_ID,
@@ -172,7 +172,7 @@ def read_tachibk(input_path: Union[str, Path]) -> schema_mihon_pb2.Backup:
 
 
 def export_to_json(backup: MihonBackup, output_path: Union[str, Path]) -> Path:
-    """Export MihonBackup to a readable JSON representation."""
+    """Export MihonBackup to a readable JSON representation with camelCase field names."""
     path = Path(output_path)
     if not path.suffix:
         path = path.with_suffix(".json")
@@ -188,16 +188,9 @@ def export_to_json(backup: MihonBackup, output_path: Union[str, Path]) -> Path:
             return {k: _convert_item(v) for k, v in obj.items()}
         return obj
 
-    data = backup.model_dump(by_alias=True)
-    clean_data = _convert_item(data)
-
-    out_dict = {
-        "backupManga": clean_data.get("backup_manga", clean_data.get("backupManga", [])),
-        "backupCategories": clean_data.get("backup_categories", clean_data.get("backupCategories", [])),
-        "backupSources": clean_data.get("backup_sources", clean_data.get("backupSources", [])),
-    }
+    data = _convert_item(backup.model_dump(by_alias=True))
 
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(out_dict, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
     return path

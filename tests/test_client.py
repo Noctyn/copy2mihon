@@ -155,6 +155,51 @@ def test_client_rate_limit_preserves_error(monkeypatch):
     assert call_count == 2
 
 
+def test_client_invalid_json_response_retries(monkeypatch):
+    client = CopyMangaClient(token="valid_token", max_retries=3)
+    call_count = 0
+
+    def mock_get(endpoint, params=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 2:
+            # HTTP 200 but HTML body -> resp.json() raises JSONDecodeError (ValueError)
+            return httpx.Response(
+                status_code=200,
+                text="<html>gateway error</html>",
+                request=httpx.Request("GET", endpoint),
+            )
+        return httpx.Response(
+            status_code=200,
+            json={"code": 200, "results": {"list": [], "total": 0}},
+            request=httpx.Request("GET", endpoint),
+        )
+
+    monkeypatch.setattr(client.client, "get", mock_get)
+
+    res = client.get_collect_comics_page()
+    assert res["code"] == 200
+    assert call_count == 2
+
+
+def test_client_unexpected_error_fails_fast(monkeypatch):
+    client = CopyMangaClient(token="valid_token", max_retries=5)
+    call_count = 0
+
+    def mock_get(endpoint, params=None):
+        nonlocal call_count
+        call_count += 1
+        raise AttributeError("boom")
+
+    monkeypatch.setattr(client.client, "get", mock_get)
+
+    with pytest.raises(AttributeError):
+        client.get_collect_comics_page()
+
+    # Unexpected (programming) errors must not be retried
+    assert call_count == 1
+
+
 def test_client_server_error_retry_success(monkeypatch):
     client = CopyMangaClient(token="valid_token", max_retries=3)
     call_count = 0

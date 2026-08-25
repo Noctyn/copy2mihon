@@ -77,7 +77,7 @@ uv run copy2mihon inspect backup.tachibk
 
 | 参数 | 说明 | 默认值 |
 |---|---|---|
-| `-t, --token` | 拷贝漫画 Token（必填） | - |
+| `-t, --token` | 拷贝漫画 Token（可省略，回退到环境变量 `COPYMANGA_TOKEN` 或交互输入） | - |
 | `-o, --output` | 输出文件路径 | `copymanga_backup_YYYY-MM-DD_HH-MM.tachibk` |
 | `-b, --existing-backup` | 待合并的现有备份路径 | 无 |
 | `-c, --category` | 书架分类名称（传入 `none` 禁用分类） | `拷贝漫画` |
@@ -94,16 +94,19 @@ uv run copy2mihon inspect backup.tachibk
 
 | 参数 | 说明 | 默认值 |
 |---|---|---|
-| `-t, --token` | 拷贝漫画 Token（必填） | - |
+| `-t, --token` | 拷贝漫画 Token（可省略，回退到环境变量 `COPYMANGA_TOKEN` 或交互输入） | - |
 | `-b, --backup-file` | 现有的 `.tachibk` 文件路径（必填） | - |
 | `-o, --output` | 输出文件路径 | `<原文件名>_merged.tachibk` |
 | `-c, --category` | 分类名称（传入 `none` 禁用分类） | `拷贝漫画` |
 | `-u, --base-url, --url` | 拷贝漫画 API 地址或镜像站 | `https://www.mangacopy.com` |
 | `-s, --source-id` | 图源 ID | `6696312508930833206` |
+| `--proxy` | HTTP / SOCKS 代理地址 | 无 |
 
 ### 环境变量
 
 - `COPYMANGA_BASE_URL`：覆盖默认 API 基础地址（如设置为 `https://www.copymanga.tv`）。
+- `COPYMANGA_TOKEN`：提供拷贝漫画 Token，可避免在命令行明文传入。
+- `COPYMANGA_DEBUG`：设置为 `1` 时启用调试模式并输出完整错误堆栈（等同于 `--debug`）。
 
 ## 运行测试
 

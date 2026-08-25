@@ -533,19 +533,20 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     """CLI Entrypoint with unified exception and debug handling."""
     debug_mode = "--debug" in sys.argv or os.environ.get("COPYMANGA_DEBUG") == "1"
-    if debug_mode:
-        logging.basicConfig(level=logging.DEBUG)
 
     try:
         if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] == "--debug"):
+            if debug_mode:
+                logging.basicConfig(level=logging.DEBUG)
             interactive_wizard()
             return
 
         parser = build_parser()
         args = parser.parse_args()
 
-        if getattr(args, "debug", False):
-            debug_mode = True
+        # Covers abbreviated flags (e.g. --deb) that the raw argv scan may miss
+        debug_mode = debug_mode or getattr(args, "debug", False)
+        if debug_mode:
             logging.basicConfig(level=logging.DEBUG)
 
         if args.command == "export":
