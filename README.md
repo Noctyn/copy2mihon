@@ -19,21 +19,28 @@
 
 拷贝漫画 API 使用 Token 身份验证。获取步骤如下：
 
-### 第一步：打开浏览器并登录
-打开浏览器访问并登录拷贝漫画官网或镜像站（如 [mangacopy.com](https://www.mangacopy.com) 或 [copy4000.com](https://www.copy4000.com)）。
+### 第一步：登录并进入个人书架页面
+1. 打开浏览器登录拷贝漫画官网或镜像站；
+2. **直接进入个人书架页面**：
+   - 官方主站：`https://www.mangacopy.com/web/person/shujia`
+   - 官方镜像 1：`https://www.copy4000.com/web/person/shujia`
+   - 官方镜像 2：`https://2026copy.com/web/person/shujia`
+
+> [!NOTE]
+> 拷贝漫画在首页及阅读页禁用了 <kbd>F12</kbd> 和右键审查功能，**必须在个人书架页面（`/web/person/shujia`）中**才能正常调出开发者工具。
 
 ### 第二步：打开开发者工具抓包
-1. 按 <kbd>F12</kbd>（或右键网页空白处选择 **检查 / Inspect**）打开开发者工具；
+1. 在书架页面按 <kbd>F12</kbd>（或右键选择 **检查 / Inspect**）打开浏览器开发者工具；
 2. 切换到顶部的 **网络 (Network)** 标签页；
-3. 在筛选输入框中输入 `collect/comics`；
-4. 点击网页上的 **书架** 或刷新页面，下方会出现一条类似 `comics?limit=12&offset=0...` 的请求。
+3. 在筛选搜索框中输入 `collect/comics`；
+4. 刷新网页或点击书架分类，列表中会出现一条 `comics?limit=...` 的接口请求。
 
 ![定位书架请求](docs/images/find_token_step1.png)
 
 ### 第三步：复制 Token
 1. 点击该条请求，在右侧面板切换到 **标头 (Headers)** 选项卡；
 2. 向下滚动找到 **请求标头 (Request Headers)** 中的 `authorization`；
-3. 复制其后面的值（形如 `Token cd7e7ffa36cf...` 或直接复制 40 位的字符即可）。
+3. 复制其后面的值（如 `Token cd7e7ffa36cf...` 或直接复制 40 位的字符即可）。
 
 ![复制 Authorization Token](docs/images/find_token_step2.png)
 
