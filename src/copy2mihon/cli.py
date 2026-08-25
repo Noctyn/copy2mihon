@@ -53,20 +53,20 @@ def generate_default_filename(extension: str = "tachibk") -> str:
 
 def prompt_for_base_url(default_url: str = DEFAULT_BASE_URL) -> str:
     """Interactive prompt for choosing a domain preset or entering a custom domain."""
-    console.print("\n选择拷贝漫画 API 域名或镜像站：")
+    console.print("\n选择连接域名 (国内网络推荐 1 或 2)：")
     for idx, (domain, desc) in enumerate(KNOWN_DOMAINS, start=1):
         console.print(f"  [bold yellow]{idx}[/bold yellow]. {domain} ({desc})")
     custom_opt_idx = len(KNOWN_DOMAINS) + 1
     console.print(f"  [bold yellow]{custom_opt_idx}[/bold yellow]. 自定义域名\n")
 
     choices = [str(i) for i in range(1, custom_opt_idx + 1)]
-    sel = Prompt.ask("选择", choices=choices, default="1")
+    sel = Prompt.ask("请选择 [1-9]", choices=choices, default="1")
 
     sel_idx = int(sel) - 1
     if sel_idx < len(KNOWN_DOMAINS):
         chosen_url = KNOWN_DOMAINS[sel_idx][0]
     else:
-        custom_input = Prompt.ask("自定义域名（例如：copy4000.com 或 https://custom-domain.com）")
+        custom_input = Prompt.ask("自定义域名 (例如: copy4000.com 或 https://custom-domain.com)")
         chosen_url = custom_input.strip()
 
     return normalize_base_url(chosen_url)
@@ -80,7 +80,7 @@ def prompt_for_token(provided_token: Optional[str] = None) -> str:
         if clean:
             return clean
 
-    token_input = Prompt.ask("CopyManga Token", password=True)
+    token_input = Prompt.ask("请输入拷贝漫画 Token", password=True)
     clean = extract_token(token_input)
     if not clean:
         console.print("[red]错误：Token 不能为空。[/red]")
@@ -133,7 +133,7 @@ def _run_export_pipeline(
         with CopyMangaClient(token=clean_tok, base_url=clean_base_url, proxy=proxy) as client:
             # 1. Fetch bookshelf
             if not history_only:
-                collect_task = progress.add_task("获取收藏列表…", total=100)
+                collect_task = progress.add_task("获取书架漫画...", total=100)
 
                 def update_collect_progress(completed: int, total: int):
                     progress.update(collect_task, completed=completed, total=total)
@@ -141,11 +141,11 @@ def _run_export_pipeline(
                 collected_comics = client.fetch_all_collected_comics(
                     progress_callback=update_collect_progress
                 )
-                console.print(f"[green]已获取 {len(collected_comics)} 部收藏漫画[/green]")
+                console.print(f"[green]已获取 {len(collected_comics)} 部书架漫画[/green]")
 
             # 2. Fetch history
             if include_history:
-                history_task = progress.add_task("获取阅读记录…", total=100)
+                history_task = progress.add_task("获取阅读历史...", total=100)
 
                 def update_history_progress(completed: int, total: int):
                     progress.update(history_task, completed=completed, total=total)
@@ -153,7 +153,7 @@ def _run_export_pipeline(
                 browse_history = client.fetch_all_browse_history(
                     progress_callback=update_history_progress
                 )
-                console.print(f"[green]已获取 {len(browse_history)} 条阅读记录[/green]")
+                console.print(f"[green]已获取 {len(browse_history)} 条阅读历史[/green]")
 
             # 3. Merge or Export
             if exist_bk_path:
@@ -170,10 +170,10 @@ def _run_export_pipeline(
                     Panel.fit(
                         f"[bold green]合并完成[/bold green]\n"
                         f"- 输出文件：{saved_tachibk.resolve()}\n"
-                        f"- 标记已读章节：{stats['chapters_marked_read']}\n"
-                        f"- 更新收藏：{stats['updated_favorites']}\n"
-                        f"- 更新阅读记录：{stats['updated_history']}\n"
-                        f"- 新增漫画：{stats['new_manga_added']}",
+                        f"- 同步已读章节：{stats['chapters_marked_read']} 话\n"
+                        f"- 同步已有书架：{stats['updated_favorites']} 本 (保留原分类)\n"
+                        f"- 同步阅读记录：{stats['updated_history']} 条\n"
+                        f"- 新增书架漫画：{stats['new_manga_added']} 本",
                         title="合并结果",
                     )
                 )
@@ -198,9 +198,9 @@ def _run_export_pipeline(
                     Panel.fit(
                         f"[bold green]导出完成[/bold green]\n"
                         f"- 输出文件：{saved_tachibk.resolve()}\n"
-                        f"- 漫画总数：{len(backup.backup_manga)}（收藏：{len(collected_comics)}，阅读记录：{len(browse_history)}）\n"
-                        f"- 图源：{source_name}（{source_id}）{cat_info}",
-                        title="导出摘要",
+                        f"- 包含漫画：{len(backup.backup_manga)} 本（书架：{len(collected_comics)} 本，历史：{len(browse_history)} 条）\n"
+                        f"- 图源名称：{source_name}（{source_id}）{cat_info}",
+                        title="导出结果",
                     )
                 )
 
@@ -218,25 +218,29 @@ def export_command(args: argparse.Namespace) -> None:
         existing_backup=getattr(args, "existing_backup", None),
         category=args.category,
         include_history=include_hist,
-        history_only=args.history_only,
+        history_only=getattr(args, "history_only", False),
         source_id=args.source_id,
         source_name=args.source_name,
         base_url=args.base_url,
         proxy=args.proxy,
-        export_json_flag=not args.no_export_json,
+        export_json_flag=True,
     )
 
 
 def merge_command(args: argparse.Namespace) -> None:
     """Handle merge subcommand."""
+    if not args.existing_backup:
+        console.print("[red]错误：请通过 -b/--existing-backup 参数指定要合并的备份文件。[/red]")
+        sys.exit(1)
+
     token = prompt_for_token(getattr(args, "token", None))
     _run_export_pipeline(
         token=token,
-        output=args.output or f"{Path(clean_path(args.backup_file)).stem}_merged.tachibk",
-        existing_backup=args.backup_file,
+        output=args.output or f"{Path(args.existing_backup).stem}_merged.tachibk",
+        existing_backup=args.existing_backup,
         category=args.category,
-        include_history=True,
-        history_only=False,
+        include_history=not args.no_include_history,
+        history_only=getattr(args, "history_only", False),
         source_id=args.source_id,
         source_name=args.source_name,
         base_url=args.base_url,
@@ -284,13 +288,13 @@ def inspect_command(args: argparse.Namespace) -> None:
 
     console.print(
         Panel.fit(
-            f"[bold]文件：[/bold]{file_path.name}\n"
-            f"[bold]漫画总数：[/bold]{len(backup_pb.backupManga)}\n"
-            f"[bold]收藏数量：[/bold]{favorites_count}\n"
-            f"[bold]阅读记录：[/bold]{history_count}\n"
-            f"[bold]分类：[/bold]{', '.join(cats) if cats else '无'}\n"
-            f"[bold]图源：[/bold]{', '.join(sources) if sources else '无'}",
-            title="Mihon 备份文件信息",
+            f"[bold]文件名称：[/bold]{file_path.name}\n"
+            f"[bold]漫画总数：[/bold]{len(backup_pb.backupManga)} 本\n"
+            f"[bold]书架收藏：[/bold]{favorites_count} 本\n"
+            f"[bold]阅读历史：[/bold]{history_count} 条\n"
+            f"[bold]包含分类：[/bold]{', '.join(cats) if cats else '无'}\n"
+            f"[bold]图源来源：[/bold]{', '.join(sources) if sources else '无'}",
+            title="备份文件详情",
         )
     )
 
@@ -320,22 +324,22 @@ def interactive_wizard() -> None:
     """Interactive wizard for user-guided operation."""
     console.print(
         Panel.fit(
-            "[bold]copy2mihon[/bold]｜拷贝漫画 Mihon 备份工具\n"
-            "将收藏和阅读记录导出为 Mihon（.tachibk）备份文件",
+            "[bold]copy2mihon[/bold] · 拷贝漫画导出工具\n"
+            "一键导出书架与历史记录至 Mihon / Tachiyomi (.tachibk)",
             border_style="cyan",
         )
     )
 
-    console.print("\n选择操作：")
-    console.print("  [bold yellow]1[/bold yellow]. 导出收藏和阅读记录（创建新备份）")
-    console.print("  [bold yellow]2[/bold yellow]. 仅导出收藏")
-    console.print("  [bold yellow]3[/bold yellow]. 仅导出阅读记录")
-    console.print("  [bold yellow]4[/bold yellow]. 将云端数据合并至现有 .tachibk 备份（同步阅读进度和阅读记录）")
-    console.print("  [bold yellow]5[/bold yellow]. 转换本地 JSON 文件")
-    console.print("  [bold yellow]6[/bold yellow]. 检查已有的 .tachibk 备份文件")
+    console.print("\n选择功能：")
+    console.print("  [bold yellow]1[/bold yellow]. 导出完整备份 (书架 + 阅读历史)")
+    console.print("  [bold yellow]2[/bold yellow]. 仅导出书架")
+    console.print("  [bold yellow]3[/bold yellow]. 仅导出阅读历史")
+    console.print("  [bold yellow]4[/bold yellow]. 合并到已有备份 (将拷贝漫画数据加到现有的 .tachibk 文件中)")
+    console.print("  [bold yellow]5[/bold yellow]. 转换本地 JSON 文件 (离线打包为 .tachibk)")
+    console.print("  [bold yellow]6[/bold yellow]. 查看备份文件内容 (查看 .tachibk 里的漫画列表)")
     console.print("  [bold yellow]0[/bold yellow]. 退出\n")
 
-    choice = Prompt.ask("选择", choices=["0", "1", "2", "3", "4", "5", "6"], default="1")
+    choice = Prompt.ask("请选择 [0-6]", choices=["0", "1", "2", "3", "4", "5", "6"], default="1")
 
     if choice == "0":
         console.print("程序已退出。")
@@ -346,15 +350,15 @@ def interactive_wizard() -> None:
         base_url_input = prompt_for_base_url()
 
         cat_prompt = Prompt.ask(
-            "分类名称（回车使用“拷贝漫画”；输入 none 不设置分类）",
+            "导入到 Mihon 后的分类名称 (默认: 拷贝漫画，不分类请输入 none)",
             default="拷贝漫画",
         )
 
-        out_name = Prompt.ask("输出文件路径", default=generate_default_filename("tachibk"))
+        out_name = Prompt.ask("保存的文件名", default=generate_default_filename("tachibk"))
 
         proxy_input = None
-        if Confirm.ask("配置网络代理（HTTP / SOCKS5）？", default=False):
-            proxy_input = Prompt.ask("代理地址（例如：http://127.0.0.1:7890）").strip() or None
+        if Confirm.ask("是否使用网络代理 (如科学上网)?", default=False):
+            proxy_input = Prompt.ask("代理地址 (例如: http://127.0.0.1:7890)").strip() or None
 
         include_hist = choice in ("1", "3")
         hist_only = choice == "3"
@@ -376,7 +380,7 @@ def interactive_wizard() -> None:
     elif choice == "4":
         token_str = prompt_for_token()
 
-        bk_path_str = Prompt.ask("现有 .tachibk 备份文件路径")
+        bk_path_str = Prompt.ask("现有的备份文件路径 (.tachibk)")
         if not bk_path_str.strip():
             console.print("[red]错误：路径不能为空。[/red]")
             return
@@ -384,16 +388,16 @@ def interactive_wizard() -> None:
         base_url_input = prompt_for_base_url()
 
         cat_prompt = Prompt.ask(
-            "分类名称（回车使用“拷贝漫画”；输入 none 不设置分类）",
+            "新增漫画归入的分类名称 (默认: 拷贝漫画，不分类请输入 none)",
             default="拷贝漫画",
         )
 
         default_out = f"{Path(clean_path(bk_path_str)).stem}_merged.tachibk"
-        out_name = Prompt.ask("合并后的输出文件路径", default=default_out)
+        out_name = Prompt.ask("合并后保存的文件名", default=default_out)
 
         proxy_input = None
-        if Confirm.ask("配置网络代理（HTTP / SOCKS5）？", default=False):
-            proxy_input = Prompt.ask("代理地址（例如：http://127.0.0.1:7890）").strip() or None
+        if Confirm.ask("是否使用网络代理 (如科学上网)?", default=False):
+            proxy_input = Prompt.ask("代理地址 (例如: http://127.0.0.1:7890)").strip() or None
 
         _run_export_pipeline(
             token=token_str,
@@ -410,17 +414,17 @@ def interactive_wizard() -> None:
         )
 
     elif choice == "5":
-        json_file = Prompt.ask("JSON 文件路径")
+        json_file = Prompt.ask("本地 JSON 文件路径")
         if not json_file.strip():
             console.print("[red]错误：文件路径不能为空。[/red]")
             return
 
         clean_in = clean_path(json_file)
         default_out = str(Path(clean_in).with_suffix(".tachibk"))
-        out_name = Prompt.ask("输出文件路径", default=default_out)
+        out_name = Prompt.ask("保存的文件名", default=default_out)
 
         cat_prompt = Prompt.ask(
-            "分类名称（回车使用“拷贝漫画”；输入 none 不设置分类）",
+            "导入到 Mihon 后的分类名称 (默认: 拷贝漫画，不分类请输入 none)",
             default="拷贝漫画",
         )
 
@@ -434,7 +438,7 @@ def interactive_wizard() -> None:
         convert_command(Args())
 
     elif choice == "6":
-        bk_file = Prompt.ask(".tachibk 备份文件路径")
+        bk_file = Prompt.ask("要查看的备份文件路径 (.tachibk)")
         if not bk_file.strip():
             console.print("[red]错误：文件路径不能为空。[/red]")
             return
