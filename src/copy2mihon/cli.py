@@ -53,14 +53,14 @@ def generate_default_filename(extension: str = "tachibk") -> str:
 
 def prompt_for_base_url(default_url: str = DEFAULT_BASE_URL) -> str:
     """Interactive prompt for choosing a domain preset or entering a custom domain."""
-    console.print("\n选择连接域名 (国内网络推荐 1 或 2)：")
+    console.print("\n选择连接域名：")
     for idx, (domain, desc) in enumerate(KNOWN_DOMAINS, start=1):
         console.print(f"  [bold yellow]{idx}[/bold yellow]. {domain} ({desc})")
     custom_opt_idx = len(KNOWN_DOMAINS) + 1
     console.print(f"  [bold yellow]{custom_opt_idx}[/bold yellow]. 自定义域名\n")
 
     choices = [str(i) for i in range(1, custom_opt_idx + 1)]
-    sel = Prompt.ask("请选择 [1-9]", choices=choices, default="1")
+    sel = Prompt.ask(f"请选择 [1-{custom_opt_idx}]", choices=choices, default="1")
 
     sel_idx = int(sel) - 1
     if sel_idx < len(KNOWN_DOMAINS):
@@ -356,10 +356,6 @@ def interactive_wizard() -> None:
 
         out_name = Prompt.ask("保存的文件名", default=generate_default_filename("tachibk"))
 
-        proxy_input = None
-        if Confirm.ask("是否使用网络代理 (如科学上网)?", default=False):
-            proxy_input = Prompt.ask("代理地址 (例如: http://127.0.0.1:7890)").strip() or None
-
         include_hist = choice in ("1", "3")
         hist_only = choice == "3"
 
@@ -373,7 +369,7 @@ def interactive_wizard() -> None:
             source_id=DEFAULT_COPYMANGA_SOURCE_ID,
             source_name=DEFAULT_COPYMANGA_SOURCE_NAME,
             base_url=base_url_input,
-            proxy=proxy_input,
+            proxy=None,
             export_json_flag=True,
         )
 
@@ -395,10 +391,6 @@ def interactive_wizard() -> None:
         default_out = f"{Path(clean_path(bk_path_str)).stem}_merged.tachibk"
         out_name = Prompt.ask("合并后保存的文件名", default=default_out)
 
-        proxy_input = None
-        if Confirm.ask("是否使用网络代理 (如科学上网)?", default=False):
-            proxy_input = Prompt.ask("代理地址 (例如: http://127.0.0.1:7890)").strip() or None
-
         _run_export_pipeline(
             token=token_str,
             output=out_name,
@@ -409,7 +401,7 @@ def interactive_wizard() -> None:
             source_id=DEFAULT_COPYMANGA_SOURCE_ID,
             source_name=DEFAULT_COPYMANGA_SOURCE_NAME,
             base_url=base_url_input,
-            proxy=proxy_input,
+            proxy=None,
             export_json_flag=False,
         )
 
