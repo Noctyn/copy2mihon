@@ -35,7 +35,14 @@ from copy2mihon.models import (
 from copy2mihon.parser import clean_path, extract_token
 from copy2mihon.proto.serializer import export_to_json, export_to_tachibk, read_tachibk
 
-console = Console()
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+console = Console(legacy_windows=False)
 
 
 def generate_default_filename(extension: str = "tachibk") -> str:
@@ -162,11 +169,11 @@ def _run_export_pipeline(
                 console.print(
                     Panel.fit(
                         f"[bold green]合并完成[/bold green]\n"
-                        f"• 输出路径: {saved_tachibk.resolve()}\n"
-                        f"• 标记已读章节数: {stats['chapters_marked_read']}\n"
-                        f"• 更新收藏书架数: {stats['updated_favorites']}\n"
-                        f"• 更新历史记录数: {stats['updated_history']}\n"
-                        f"• 新增漫画条目数: {stats['new_manga_added']}",
+                        f"- 输出路径: {saved_tachibk.resolve()}\n"
+                        f"- 标记已读章节数: {stats['chapters_marked_read']}\n"
+                        f"- 更新收藏书架数: {stats['updated_favorites']}\n"
+                        f"- 更新历史记录数: {stats['updated_history']}\n"
+                        f"- 新增漫画条目数: {stats['new_manga_added']}",
                         title="合并统计",
                     )
                 )
@@ -190,9 +197,9 @@ def _run_export_pipeline(
                 console.print(
                     Panel.fit(
                         f"[bold green]导出完成[/bold green]\n"
-                        f"• 输出文件: {saved_tachibk.resolve()}\n"
-                        f"• 漫画总数: {len(backup.backup_manga)} (书架收藏: {len(collected_comics)}, 阅读历史: {len(browse_history)})\n"
-                        f"• 漫画源: {source_name} ({source_id}){cat_info}",
+                        f"- 输出文件: {saved_tachibk.resolve()}\n"
+                        f"- 漫画总数: {len(backup.backup_manga)} (书架收藏: {len(collected_comics)}, 阅读历史: {len(browse_history)})\n"
+                        f"- 漫画源: {source_name} ({source_id}){cat_info}",
                         title="备份信息",
                     )
                 )
