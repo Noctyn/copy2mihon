@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from typing import Any, Callable, Dict, List, Optional
 import httpx
@@ -12,11 +13,32 @@ from copy2mihon.parser import extract_token
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BASE_URL = "https://www.mangacopy.com"
+DEFAULT_BASE_URL = os.environ.get("COPYMANGA_BASE_URL", "https://www.mangacopy.com")
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 )
+
+KNOWN_DOMAINS = [
+    "https://www.mangacopy.com",
+    "https://api.mangacopy.com",
+    "https://www.copymanga.tv",
+    "https://www.copymanga.site",
+    "https://api.copymanga.org",
+    "https://copymanga.com",
+]
+
+
+def normalize_base_url(url: Optional[str]) -> str:
+    """Normalize base URL with scheme and trimmed slashes."""
+    if not url:
+        return DEFAULT_BASE_URL
+    clean = url.strip().rstrip("/")
+    if not clean:
+        return DEFAULT_BASE_URL
+    if not (clean.startswith("http://") or clean.startswith("https://")):
+        clean = f"https://{clean}"
+    return clean
 
 
 class CopyMangaClient:
@@ -25,12 +47,12 @@ class CopyMangaClient:
     def __init__(
         self,
         token: str,
-        base_url: str = DEFAULT_BASE_URL,
+        base_url: Optional[str] = None,
         proxy: Optional[str] = None,
         timeout: float = 30.0,
         max_retries: int = 5,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.base_url = normalize_base_url(base_url)
         self.token = extract_token(token)
         self.proxy = proxy
         self.timeout = timeout

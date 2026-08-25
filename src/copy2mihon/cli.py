@@ -15,7 +15,12 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from copy2mihon import __version__
-from copy2mihon.client import CopyMangaClient, DEFAULT_BASE_URL
+from copy2mihon.client import (
+    CopyMangaClient,
+    DEFAULT_BASE_URL,
+    KNOWN_DOMAINS,
+    normalize_base_url,
+)
 from copy2mihon.converter import (
     convert_copymanga_all_to_backup,
     convert_json_file_to_backup,
@@ -37,6 +42,15 @@ def generate_default_filename(extension: str = "tachibk") -> str:
     return f"copymanga_backup_{timestamp}.{extension}"
 
 
+def prompt_for_base_url(default_url: str = DEFAULT_BASE_URL) -> str:
+    """Prompt user for API base URL with preset suggestions."""
+    url = Prompt.ask(
+        "拷贝漫画 API 域名 (直接回车使用默认域名，或输入自定义域名/镜像站)",
+        default=default_url,
+    )
+    return normalize_base_url(url)
+
+
 def _run_export_pipeline(
     token: str,
     output: str,
@@ -56,6 +70,7 @@ def _run_export_pipeline(
         console.print("[red]错误: Token 不能为空。[/red]")
         sys.exit(1)
 
+    clean_base_url = normalize_base_url(base_url)
     out_clean = clean_path(output)
     output_path = Path(out_clean)
 
@@ -64,7 +79,7 @@ def _run_export_pipeline(
         console.print(f"[red]错误: 待合并的备份文件不存在: {exist_bk_path}[/red]")
         sys.exit(1)
 
-    console.print(f"连接拷贝漫画 API: {base_url}")
+    console.print(f"连接拷贝漫画 API: {clean_base_url}")
 
     with Progress(
         SpinnerColumn(),
@@ -78,7 +93,7 @@ def _run_export_pipeline(
         collected_comics = []
         browse_history = []
 
-        with CopyMangaClient(token=clean_tok, base_url=base_url, proxy=proxy) as client:
+        with CopyMangaClient(token=clean_tok, base_url=clean_base_url, proxy=proxy) as client:
             # 1. Fetch bookshelf
             if not history_only:
                 collect_task = progress.add_task("获取书架订阅...", total=100)
@@ -241,7 +256,7 @@ def inspect_command(args: argparse.Namespace) -> None:
     )
 
     if backup_pb.backupManga:
-        table = Table(title=f"漫画列表预览 (前 10 条)")
+        table = Table(title="漫画列表预览 (前 10 条)")
         table.add_column("标题", style="cyan", no_wrap=True)
         table.add_column("URL (Path)", style="magenta")
         table.add_column("图源 ID", style="green")
@@ -293,6 +308,8 @@ def interactive_wizard() -> None:
             console.print("[red]错误: Token 不能为空。[/red]")
             return
 
+        base_url_input = prompt_for_base_url()
+
         cat_prompt = Prompt.ask(
             "书架分类名称 (直接回车默认使用 '拷贝漫画'，不设置分类请输入 'none')",
             default="拷贝漫画",
@@ -312,7 +329,7 @@ def interactive_wizard() -> None:
             history_only=hist_only,
             source_id=DEFAULT_COPYMANGA_SOURCE_ID,
             source_name=DEFAULT_COPYMANGA_SOURCE_NAME,
-            base_url=DEFAULT_BASE_URL,
+            base_url=base_url_input,
             proxy=None,
             export_json_flag=True,
         )
@@ -327,6 +344,8 @@ def interactive_wizard() -> None:
         if not bk_path_str.strip():
             console.print("[red]错误: 路径不能为空。[/red]")
             return
+
+        base_url_input = prompt_for_base_url()
 
         cat_prompt = Prompt.ask(
             "书架分类名称 (直接回车默认使用 '拷贝漫画'，不设置分类请输入 'none')",
@@ -345,7 +364,7 @@ def interactive_wizard() -> None:
             history_only=False,
             source_id=DEFAULT_COPYMANGA_SOURCE_ID,
             source_name=DEFAULT_COPYMANGA_SOURCE_NAME,
-            base_url=DEFAULT_BASE_URL,
+            base_url=base_url_input,
             proxy=None,
             export_json_flag=False,
         )
@@ -424,7 +443,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--source-name", default=DEFAULT_COPYMANGA_SOURCE_NAME, help="图源名称"
     )
     export_p.add_argument(
-        "--base-url", default=DEFAULT_BASE_URL, help="拷贝漫画 API 地址"
+        "-u", "--base-url", "--url", default=DEFAULT_BASE_URL, help="拷贝漫画 API 地址或镜像站"
     )
     export_p.add_argument("--proxy", help="HTTP / SOCKS 代理地址")
     export_p.add_argument(
@@ -446,7 +465,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--source-name", default=DEFAULT_COPYMANGA_SOURCE_NAME, help="图源名称"
     )
     merge_p.add_argument(
-        "--base-url", default=DEFAULT_BASE_URL, help="拷贝漫画 API 地址"
+        "-u", "--base-url", "--url", default=DEFAULT_BASE_URL, help="拷贝漫画 API 地址或镜像站"
     )
     merge_p.add_argument("--proxy", help="HTTP / SOCKS 代理地址")
 

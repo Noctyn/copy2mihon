@@ -2,12 +2,21 @@
 
 import pytest
 import httpx
-from copy2mihon.client import CopyMangaClient
+from copy2mihon.client import CopyMangaClient, normalize_base_url
+
+
+def test_normalize_base_url():
+    assert normalize_base_url("copymanga.tv") == "https://copymanga.tv"
+    assert normalize_base_url("http://copymanga.site/") == "http://copymanga.site"
+    assert normalize_base_url("  https://www.mangacopy.com/  ") == "https://www.mangacopy.com"
+    assert normalize_base_url("") == "https://www.mangacopy.com"
+    assert normalize_base_url(None) == "https://www.mangacopy.com"
 
 
 def test_client_init_headers():
-    client = CopyMangaClient(token="Token sample_token_123")
+    client = CopyMangaClient(token="Token sample_token_123", base_url="api.mangacopy.com")
     assert client.token == "sample_token_123"
+    assert client.base_url == "https://api.mangacopy.com"
     assert client.client.headers["authorization"] == "Token sample_token_123"
     assert client.client.headers["platform"] == "2"
 
