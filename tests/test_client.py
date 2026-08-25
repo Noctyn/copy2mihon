@@ -1,0 +1,95 @@
+"""Tests for CopyManga API client."""
+
+import pytest
+import httpx
+from copy2mihon.client import CopyMangaClient
+
+
+def test_client_init_headers():
+    client = CopyMangaClient(token="Token sample_token_123")
+    assert client.token == "sample_token_123"
+    assert client.client.headers["authorization"] == "Token sample_token_123"
+    assert client.client.headers["platform"] == "2"
+
+
+def test_client_fetch_all_collected_comics_pagination(monkeypatch):
+    client = CopyMangaClient(token="test_token")
+
+    def mock_get(endpoint, params=None):
+        offset = params.get("offset", 0) if params else 0
+        if offset == 0:
+            return httpx.Response(
+                status_code=200,
+                json={
+                    "code": 200,
+                    "results": {
+                        "list": [{"comic": {"name": "Comic 1", "path_word": "c1"}}],
+                        "total": 2,
+                    },
+                },
+                request=httpx.Request("GET", endpoint),
+            )
+        else:
+            return httpx.Response(
+                status_code=200,
+                json={
+                    "code": 200,
+                    "results": {
+                        "list": [{"comic": {"name": "Comic 2", "path_word": "c2"}}],
+                        "total": 2,
+                    },
+                },
+                request=httpx.Request("GET", endpoint),
+            )
+
+    monkeypatch.setattr(client.client, "get", mock_get)
+
+    results = client.fetch_all_collected_comics(page_size=1, delay_seconds=0)
+    assert len(results) == 2
+    assert results[0]["comic"]["name"] == "Comic 1"
+    assert results[1]["comic"]["name"] == "Comic 2"
+
+
+def test_client_fetch_all_browse_history_pagination(monkeypatch):
+    client = CopyMangaClient(token="test_token")
+
+    def mock_get(endpoint, params=None):
+        return httpx.Response(
+            status_code=200,
+            json={
+                "code": 200,
+                "results": {
+                    "list": [
+                        {
+                            "comic": {"name": "History Comic 1", "path_word": "hc1"},
+                            "last_chapter_id": "uuid-1",
+                            "last_chapter_name": "第1话",
+                        }
+                    ],
+                    "total": 1,
+                },
+            },
+            request=httpx.Request("GET", endpoint),
+        )
+
+    monkeypatch.setattr(client.client, "get", mock_get)
+
+    results = client.fetch_all_browse_history(page_size=10, delay_seconds=0)
+    assert len(results) == 1
+    assert results[0]["comic"]["name"] == "History Comic 1"
+
+
+def test_client_unauthorized_error(monkeypatch):
+    client = CopyMangaClient(token="invalid_token")
+
+    def mock_get(endpoint, params=None):
+        return httpx.Response(
+            status_code=401,
+            json={"code": 401, "message": "Invalid token"},
+            request=httpx.Request("GET", endpoint),
+        )
+
+    monkeypatch.setattr(client.client, "get", mock_get)
+
+    with pytest.raises(PermissionError):
+        client.get_collect_comics_page()
