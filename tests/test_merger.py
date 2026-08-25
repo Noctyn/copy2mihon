@@ -51,7 +51,8 @@ def test_merge_copymanga_into_backup_pb():
 
     res_m = modified_pb.backupManga[0]
     assert res_m.favorite is True
-    assert 0 in res_m.categories
+    # Existing manga's category assignment is preserved (not modified)
+    assert len(res_m.categories) == 0
 
     # Only matched chapter is marked read
     assert res_m.chapters[0].read is False

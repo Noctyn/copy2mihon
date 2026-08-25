@@ -91,11 +91,7 @@ def merge_copymanga_into_backup_pb(
             if not m.favorite:
                 m.favorite = True
                 stats["updated_favorites"] += 1
-            if target_category_orders:
-                existing_cats = set(m.categories)
-                for cat_ord in target_category_orders:
-                    if cat_ord not in existing_cats:
-                        m.categories.append(cat_ord)
+            # Preserve user's existing category assignment for manga already in Mihon
         else:
             new_m = comic_dict_to_mihon_manga(
                 item=item,
