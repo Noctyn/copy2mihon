@@ -21,9 +21,11 @@ DEFAULT_USER_AGENT = (
 
 KNOWN_DOMAINS = [
     "https://www.mangacopy.com",
+    "https://www.copy4000.com",
+    "https://2026copy.com",
     "https://api.mangacopy.com",
-    "https://www.copymanga.tv",
     "https://www.copymanga.site",
+    "https://www.copymanga.tv",
     "https://api.copymanga.org",
     "https://copymanga.com",
 ]

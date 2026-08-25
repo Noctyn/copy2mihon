@@ -38,10 +38,10 @@ console = Console()
 
 PRESET_DOMAINS = [
     ("https://www.mangacopy.com", "官方主站 (默认)"),
+    ("https://www.copy4000.com", "官方镜像 1 (可用)"),
+    ("https://2026copy.com", "官方镜像 2 (可用)"),
     ("https://api.mangacopy.com", "官方 API 节点"),
-    ("https://www.copymanga.tv", "常用镜像站 1"),
-    ("https://www.copymanga.site", "常用镜像站 2"),
-    ("https://api.copymanga.org", "镜像 API 节点"),
+    ("https://www.copymanga.site", "备用镜像站"),
 ]
 
 
