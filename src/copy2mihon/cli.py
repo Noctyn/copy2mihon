@@ -173,7 +173,7 @@ def _run_export_pipeline(
                         f"- 同步已读章节：{stats['chapters_marked_read']} 话\n"
                         f"- 同步已有书架：{stats['updated_favorites']} 本 (保留原分类)\n"
                         f"- 同步阅读记录：{stats['updated_history']} 条\n"
-                        f"- 新增书架漫画：{stats['new_manga_added']} 本",
+                        f"- 新增漫画：{stats['new_manga_added']} 本",
                         title="合并结果",
                     )
                 )
@@ -223,23 +223,24 @@ def export_command(args: argparse.Namespace) -> None:
         source_name=args.source_name,
         base_url=args.base_url,
         proxy=args.proxy,
-        export_json_flag=True,
+        export_json_flag=not getattr(args, "no_export_json", False),
     )
 
 
 def merge_command(args: argparse.Namespace) -> None:
     """Handle merge subcommand."""
-    if not args.existing_backup:
-        console.print("[red]错误：请通过 -b/--existing-backup 参数指定要合并的备份文件。[/red]")
+    backup_file = clean_path(args.backup_file)
+    if not backup_file:
+        console.print("[red]错误：请通过 -b/--backup-file 参数指定要合并的备份文件。[/red]")
         sys.exit(1)
 
     token = prompt_for_token(getattr(args, "token", None))
     _run_export_pipeline(
         token=token,
-        output=args.output or f"{Path(args.existing_backup).stem}_merged.tachibk",
-        existing_backup=args.existing_backup,
+        output=args.output or f"{Path(backup_file).stem}_merged.tachibk",
+        existing_backup=backup_file,
         category=args.category,
-        include_history=not args.no_include_history,
+        include_history=not getattr(args, "no_include_history", False),
         history_only=getattr(args, "history_only", False),
         source_id=args.source_id,
         source_name=args.source_name,
@@ -500,6 +501,9 @@ def build_parser() -> argparse.ArgumentParser:
     merge_p.add_argument("-o", "--output", help="输出文件路径")
     merge_p.add_argument(
         "-c", "--category", default="拷贝漫画", help="分类名称（输入 none 不设置分类）"
+    )
+    merge_p.add_argument(
+        "--no-include-history", action="store_true", help="不合并阅读记录"
     )
     merge_p.add_argument(
         "-s", "--source-id", type=int, default=DEFAULT_COPYMANGA_SOURCE_ID, help="图源 ID"

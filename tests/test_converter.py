@@ -1,5 +1,7 @@
 """Tests for converter module."""
 
+from datetime import datetime, timezone
+
 import pytest
 from copy2mihon.converter import (
     convert_copymanga_all_to_backup,
@@ -8,6 +10,8 @@ from copy2mihon.converter import (
     normalize_manga_url,
     normalize_status,
     parse_category_names,
+    parse_chapter_number,
+    parse_datetime_to_ms,
 )
 from copy2mihon.models import DEFAULT_COPYMANGA_SOURCE_ID
 
@@ -32,6 +36,24 @@ def test_normalize_status():
     assert normalize_status(1) == 2
     assert normalize_status("连载中") == 1
     assert normalize_status("已完结") == 2
+    # CopyManga returns {"value": ..., "display": ...}
+    assert normalize_status({"value": 0, "display": "连载中"}) == 1
+    assert normalize_status({"value": 1, "display": "已完结"}) == 2
+    # display-only payloads must not be treated as completed
+    assert normalize_status({"display": "連載中"}) == 1
+    assert normalize_status({"unexpected": "shape"}) == 1
+    # English words should not match on substrings like "pending"
+    assert normalize_status("pending") == 1
+    assert normalize_status("completed") == 2
+
+
+def test_parse_datetime_naive_is_beijing_time():
+    expected = int(datetime(2026, 8, 25, 2, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    assert parse_datetime_to_ms("2026-08-25 10:00:00") == expected
+    assert parse_datetime_to_ms("2026-08-25T10:00:00") == expected
+    # Explicit offsets are respected
+    assert parse_datetime_to_ms("2026-08-25T10:00:00+08:00") == expected
+    assert parse_datetime_to_ms("2026-08-25T02:00:00Z") == expected
 
 
 def test_create_chapter_and_history():
@@ -49,6 +71,13 @@ def test_create_chapter_and_history():
     assert hist is not None
     assert hist.url == "/comic/naruto/chapter/uuid-ch-1"
     assert hist.last_read == 1700000000000
+
+
+def test_parse_chapter_number_prefers_explicit_marker():
+    assert parse_chapter_number("第2卷 第10话") == 10.0
+    assert parse_chapter_number("第01-04话") == 4.0
+    assert parse_chapter_number("2018-02-15 ヤングジャンプ 2018 No.11") == 11.0
+    assert parse_chapter_number("阅读历史") == 0.0
 
 
 def test_comic_dict_to_mihon_manga_raw_comic():
@@ -104,6 +133,27 @@ def test_convert_copymanga_all_to_backup_matches_bookshelf_and_history_without_p
     assert backup.backup_manga[0].favorite is True
     assert len(backup.backup_manga[0].chapters) == 1
     assert backup.backup_manga[0].chapters[0].name == "第99话"
+
+
+def test_history_only_manga_uses_actual_read_time_not_date_added():
+    """New manga from history must store the read timestamp, not fall back to now."""
+    hist_item = {
+        "comic": {"path_word": "comic-c", "name": "Comic C"},
+        "chapter_id": "uuid-c9",
+        "chapter": {"name": "第9话"},
+        "last_read_time": "2026-08-21 12:00:00",
+    }
+
+    backup = convert_copymanga_all_to_backup(
+        collected_items=[],
+        browse_history_items=[hist_item],
+    )
+
+    assert len(backup.backup_manga) == 1
+    manga = backup.backup_manga[0]
+    assert manga.chapters[0].read is True
+    expected_ms = int(datetime(2026, 8, 21, 4, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    assert manga.history[0].last_read == expected_ms
 
 
 def test_convert_copymanga_all_to_backup_with_custom_multiple_categories():

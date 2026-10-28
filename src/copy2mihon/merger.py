@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import gzip
 from pathlib import Path
-import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -12,10 +11,21 @@ from copy2mihon.converter import (
     comic_dict_to_mihon_manga,
     create_chapter_and_history,
     parse_category_names,
+    parse_chapter_number,
     parse_datetime_to_ms,
 )
-from copy2mihon.models import DEFAULT_COPYMANGA_SOURCE_ID
-from copy2mihon.parser import extract_path_word, normalize_path_word, repair_mojibake
+from copy2mihon.models import (
+    DEFAULT_COPYMANGA_SOURCE_ID,
+    DEFAULT_COPYMANGA_SOURCE_NAME,
+    MihonManga,
+)
+from copy2mihon.parser import (
+    extract_chapter_ref,
+    extract_path_word,
+    extract_read_time,
+    normalize_path_word,
+    repair_mojibake,
+)
 from copy2mihon.proto import schema_mihon_pb2
 from copy2mihon.proto.serializer import (
     copy_chapter_model_to_pb,
@@ -23,6 +33,63 @@ from copy2mihon.proto.serializer import (
     copy_manga_model_to_pb,
     read_tachibk,
 )
+
+
+def _is_canonical_chapter_url(url: str) -> bool:
+    """Prefer /comic/... rows over malformed legacy URLs missing the prefix."""
+    return (url or "").startswith("/comic/")
+
+
+def _chapter_url_key(url: str) -> str:
+    clean = (url or "").rstrip("/")
+    if "/chapter/" not in clean.lower():
+        return ""
+    return clean.rsplit("/", 1)[-1].lower()
+
+
+def _same_chapter_url(a: str, b: str) -> bool:
+    if a == b:
+        return True
+    key = _chapter_url_key(a)
+    return bool(key) and key == _chapter_url_key(b)
+
+
+def _copy_manga_with_children(
+    m_pb: schema_mihon_pb2.BackupManga,
+    model: MihonManga,
+) -> None:
+    """Copy a manga model including its chapters and history into a BackupManga message."""
+    copy_manga_model_to_pb(m_pb, model)
+    for ch in model.chapters:
+        copy_chapter_model_to_pb(m_pb.chapters.add(), ch)
+    for hist in model.history:
+        copy_history_model_to_pb(m_pb.history.add(), hist)
+
+
+def _append_chapter_and_history(
+    m_pb: schema_mihon_pb2.BackupManga,
+    path_word: str,
+    chapter_id: str,
+    chapter_name: str,
+    read_time_ms: int,
+    stats: Dict[str, int],
+) -> None:
+    """Append a missing chapter (marked read) plus its history entry."""
+    ch_model, hist_model = create_chapter_and_history(
+        path_word=path_word,
+        chapter_id=chapter_id,
+        chapter_name=chapter_name,
+        read_time_ms=read_time_ms,
+    )
+    if not ch_model or not hist_model:
+        return
+    if any(_same_chapter_url(ch.url, ch_model.url) for ch in m_pb.chapters):
+        return
+
+    copy_chapter_model_to_pb(m_pb.chapters.add(), ch_model)
+    copy_history_model_to_pb(m_pb.history.add(), hist_model)
+    stats["chapters_marked_read"] += 1
+    stats["updated_history"] += 1
 
 
 def merge_copymanga_into_backup_pb(
@@ -100,7 +167,7 @@ def merge_copymanga_into_backup_pb(
                 is_favorite=True,
             )
             m_pb = backup_pb.backupManga.add()
-            copy_manga_model_to_pb(m_pb, new_m)
+            _copy_manga_with_children(m_pb, new_m)
             manga_by_path_word[pw] = m_pb
             stats["new_manga_added"] += 1
 
@@ -110,70 +177,84 @@ def merge_copymanga_into_backup_pb(
             comic_data = b_item.get("comic", {})
             pw = extract_path_word(b_item, comic_data, fallback=True)
 
-            last_ch_id = b_item.get("last_chapter_id")
-            last_ch_name = repair_mojibake(b_item.get("last_chapter_name", ""))
+            last_ch_id, last_ch_name = extract_chapter_ref(b_item, comic_data)
             # Keep 0 for missing timestamps so existing lastRead values are preserved
-            read_time_raw = b_item.get("datetime_modifier") or comic_data.get("datetime_updated")
+            read_time_raw = extract_read_time(b_item, comic_data)
             read_time_ms = parse_datetime_to_ms(read_time_raw) if read_time_raw else 0
 
             if pw in manga_by_path_word:
                 m = manga_by_path_word[pw]
-                stats["updated_history"] += 1
 
                 if len(m.chapters) > 0:
-                    matched_idx = -1
+                    matched_indices: List[int] = []
 
                     # 1. Exact match by last segment of chapter URL (avoid substring collisions)
                     if last_ch_id:
-                        target_id_clean = str(last_ch_id).strip().lower()
+                        target_id_clean = last_ch_id.strip().lower()
                         for idx, ch in enumerate(m.chapters):
                             ch_url_id = ch.url.rstrip("/").rsplit("/", 1)[-1].strip().lower()
                             if ch_url_id == target_id_clean:
-                                matched_idx = idx
-                                break
+                                matched_indices.append(idx)
 
                     # 2. Fallback: match by chapter number from repaired name
-                    if matched_idx == -1 and last_ch_name:
-                        match = re.search(r"(\d+(\.\d+)?)", last_ch_name)
-                        if match:
-                            target_val = float(match.group(1))
+                    if not matched_indices and last_ch_name:
+                        target_val = parse_chapter_number(last_ch_name)
+                        if target_val > 0:
                             for idx, ch in enumerate(m.chapters):
                                 if abs(ch.chapterNumber - target_val) < 0.01:
-                                    matched_idx = idx
-                                    break
+                                    matched_indices.append(idx)
 
-                    if matched_idx != -1:
-                        target_ch = m.chapters[matched_idx]
-                        target_url = target_ch.url
+                    # Duplicate rows are the same chapter; prefer a canonical URL
+                    # so the history entry is not rewritten to a malformed one.
+                    if matched_indices:
+                        matched_indices.sort(
+                            key=lambda idx: 0 if _is_canonical_chapter_url(m.chapters[idx].url) else 1
+                        )
 
-                        if not target_ch.read:
-                            target_ch.read = True
+                    if matched_indices:
+                        target_url = m.chapters[matched_indices[0]].url
+                        changed = False
+                        any_unread = False
+
+                        for idx in matched_indices:
+                            target_ch = m.chapters[idx]
+                            if not target_ch.read:
+                                target_ch.read = True
+                                if target_ch.lastPageRead == 0:
+                                    target_ch.lastPageRead = 1
+                                any_unread = True
+                                changed = True
+
+                        if any_unread:
                             stats["chapters_marked_read"] += 1
-                        target_ch.lastPageRead = 1
 
-                        existing_hist = next((h for h in m.history if h.url == target_url), None)
+                        existing_hist = next(
+                            (h for h in m.history if _same_chapter_url(h.url, target_url)),
+                            None,
+                        )
                         if existing_hist:
                             if read_time_ms > 0 and read_time_ms > existing_hist.lastRead:
                                 existing_hist.lastRead = read_time_ms
+                                changed = True
                         else:
-                            fallback_time = read_time_ms or int(time.time() * 1000)
                             hist_pb = m.history.add()
                             hist_pb.url = target_url
-                            hist_pb.lastRead = fallback_time
+                            hist_pb.lastRead = read_time_ms or int(time.time() * 1000)
                             hist_pb.readDuration = 0
-                else:
-                    if last_ch_id:
-                        ch_model, hist_model = create_chapter_and_history(
-                            path_word=pw,
-                            chapter_id=last_ch_id,
-                            chapter_name=last_ch_name,
-                            read_time_ms=read_time_ms,
+                            changed = True
+
+                        if changed:
+                            stats["updated_history"] += 1
+                    elif last_ch_id:
+                        # Chapter missing from Mihon's list (e.g. not refreshed yet):
+                        # keep the progress instead of dropping it silently.
+                        _append_chapter_and_history(
+                            m, pw, last_ch_id, last_ch_name, read_time_ms, stats
                         )
-                        if ch_model and hist_model:
-                            ch_pb = m.chapters.add()
-                            copy_chapter_model_to_pb(ch_pb, ch_model)
-                            hist_pb = m.history.add()
-                            copy_history_model_to_pb(hist_pb, hist_model)
+                elif last_ch_id:
+                    _append_chapter_and_history(
+                        m, pw, last_ch_id, last_ch_name, read_time_ms, stats
+                    )
             else:
                 if last_ch_id:
                     new_m = comic_dict_to_mihon_manga(
@@ -182,24 +263,19 @@ def merge_copymanga_into_backup_pb(
                         category_ids=[],
                         is_favorite=False,
                     )
-                    ch_model, hist_model = create_chapter_and_history(
-                        path_word=pw,
-                        chapter_id=last_ch_id,
-                        chapter_name=last_ch_name,
-                        read_time_ms=read_time_ms,
-                    )
                     m_pb = backup_pb.backupManga.add()
-                    copy_manga_model_to_pb(m_pb, new_m)
-
-                    if ch_model and hist_model:
-                        ch_pb = m_pb.chapters.add()
-                        copy_chapter_model_to_pb(ch_pb, ch_model)
-                        hist_pb = m_pb.history.add()
-                        copy_history_model_to_pb(hist_pb, hist_model)
-
+                    _copy_manga_with_children(m_pb, new_m)
                     manga_by_path_word[pw] = m_pb
                     stats["new_manga_added"] += 1
+                    if new_m.chapters:
+                        stats["chapters_marked_read"] += 1
                     stats["updated_history"] += 1
+
+    # 5. Ensure the CopyManga source entry exists so Mihon can resolve its name
+    if not any(src.sourceId == source_id for src in backup_pb.backupSources):
+        src = backup_pb.backupSources.add()
+        src.name = DEFAULT_COPYMANGA_SOURCE_NAME
+        src.sourceId = source_id
 
     return backup_pb, stats
 
@@ -222,9 +298,13 @@ def merge_and_export_tachibk(
         category_name=category_name,
     )
 
+    output_path = Path(output_backup_path)
+    if not output_path.suffix:
+        output_path = output_path.with_suffix(".tachibk")
+
     serialized_bytes = modified_pb.SerializeToString()
-    output_backup_path.parent.mkdir(parents=True, exist_ok=True)
-    with gzip.open(output_backup_path, "wb") as f:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(output_path, "wb") as f:
         f.write(serialized_bytes)
 
-    return output_backup_path, stats
+    return output_path, stats

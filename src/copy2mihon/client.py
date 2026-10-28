@@ -102,13 +102,15 @@ class CopyMangaClient:
 
                 # 2. Other 4xx Client Errors (e.g. 400 Bad Request) -> Fail fast without retrying
                 if 400 <= resp.status_code < 500 and resp.status_code != 429:
-                    raise RuntimeError(f"Client Error ({resp.status_code}): {resp.text}")
+                    raise RuntimeError(
+                        f"Client Error ({resp.status_code}): {resp.text[:200]}"
+                    )
 
                 # 3. Rate limiting (429) -> Retry with Retry-After header
                 if resp.status_code == 429:
-                    last_exception = RuntimeError(
-                        f"Rate limited (429) on {endpoint} after {self.max_retries} attempts."
-                    )
+                    last_exception = RuntimeError(f"Rate limited (429) on {endpoint}")
+                    if attempt >= self.max_retries:
+                        break
                     retry_after = resp.headers.get("retry-after")
                     sleep_sec = float(retry_after) if retry_after and retry_after.isdigit() else attempt * 2.0
                     logger.warning(
@@ -145,7 +147,17 @@ class CopyMangaClient:
                 # Non-retryable errors -> Re-raise immediately
                 raise
 
-            except (httpx.TransportError, httpx.NetworkError, httpx.RemoteProtocolError) as net_err:
+            except httpx.TimeoutException as timeout_err:
+                # Timeout -> Wait and retry without rebuilding client.
+                # Must precede TransportError: TimeoutException subclasses it.
+                last_exception = timeout_err
+                logger.warning(
+                    f"Timeout on {endpoint} ({attempt}/{self.max_retries}): {timeout_err}. Retrying..."
+                )
+                if attempt < self.max_retries:
+                    time.sleep(min(attempt * 1.5, 6.0))
+
+            except httpx.TransportError as net_err:
                 # Connection dropped / TCP reset -> Recreate connection pool and backoff
                 last_exception = net_err
                 logger.warning(
@@ -157,15 +169,6 @@ class CopyMangaClient:
                     except Exception:
                         pass
                     self._init_client()
-                    time.sleep(min(attempt * 1.5, 6.0))
-
-            except httpx.TimeoutException as timeout_err:
-                # Timeout -> Wait and retry without rebuilding client
-                last_exception = timeout_err
-                logger.warning(
-                    f"Timeout on {endpoint} ({attempt}/{self.max_retries}): {timeout_err}. Retrying..."
-                )
-                if attempt < self.max_retries:
                     time.sleep(min(attempt * 1.5, 6.0))
 
             except httpx.HTTPStatusError as http_err:

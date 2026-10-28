@@ -203,6 +203,7 @@ uv run copy2mihon inspect backup.tachibk
 | `-b, --backup-file` | 现有 `.tachibk` 备份文件 | 必填 |
 | `-o, --output` | 输出文件路径 | `<原文件名>_merged.tachibk` |
 | `-c, --category` | 分类名称，使用 `none` 可禁用分类 | `拷贝漫画` |
+| `--no-include-history` | 不合并阅读记录 | `False` |
 | `-u, --base-url, --url` | 拷贝漫画 API 地址或镜像站 | `https://www.mangacopy.com` |
 | `-s, --source-id` | 图源 ID | `6696312508930833206` |
 | `--source-name` | 图源名称 | `拷贝漫画` |

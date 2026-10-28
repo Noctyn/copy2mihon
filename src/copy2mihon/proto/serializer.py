@@ -50,10 +50,8 @@ def copy_manga_model_to_pb(
     m_pb.chapterFlags = model.chapter_flags
     m_pb.viewer_flags = model.viewer_flags
     m_pb.updateStrategy = model.update_strategy
-    if model.version:
-        m_pb.version = model.version
     if model.memo:
-        m_pb.memo.extend(model.memo)
+        m_pb.memo = model.memo[0]
 
 
 def copy_chapter_model_to_pb(
@@ -72,12 +70,8 @@ def copy_chapter_model_to_pb(
     ch_pb.dateUpload = model.date_upload
     ch_pb.chapterNumber = model.chapter_number
     ch_pb.sourceOrder = model.source_order
-    if model.last_modified_at:
-        ch_pb.lastModifiedAt = model.last_modified_at
-    if model.version:
-        ch_pb.version = model.version
     if model.memo:
-        ch_pb.memo.extend(model.memo)
+        ch_pb.memo = model.memo[0]
 
 
 def copy_history_model_to_pb(

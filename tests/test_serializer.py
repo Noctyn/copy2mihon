@@ -111,3 +111,33 @@ def test_export_to_json(tmp_path):
     assert "readDuration" in manga["history"][0]
     assert data["backupSources"][0]["sourceId"] == 12345
     assert "source_id" not in data["backupSources"][0]
+
+
+def test_komikku_sync_fields_survive_tachibk_roundtrip(tmp_path):
+    """Komikku still writes manga/chapter lastModifiedAt+version; keep them intact."""
+    import gzip
+
+    from copy2mihon.proto import schema_mihon_pb2
+
+    backup = schema_mihon_pb2.Backup()
+    m = backup.backupManga.add()
+    m.source = 1
+    m.url = "/comic/sync_comic"
+    m.lastModifiedAt = 111
+    m.version = 7
+    ch = m.chapters.add()
+    ch.url = "/comic/sync_comic/chapter/a"
+    ch.name = "第1话"
+    ch.lastModifiedAt = 222
+    ch.version = 3
+
+    path = tmp_path / "sync.tachibk"
+    with gzip.open(path, "wb") as f:
+        f.write(backup.SerializeToString())
+
+    loaded = read_tachibk(path)
+    lm = loaded.backupManga[0]
+    assert lm.lastModifiedAt == 111
+    assert lm.version == 7
+    assert lm.chapters[0].lastModifiedAt == 222
+    assert lm.chapters[0].version == 3

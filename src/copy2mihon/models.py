@@ -79,7 +79,7 @@ class MihonManga(BaseModel):
         default_factory=lambda: int(time.time() * 1000), alias="dateAdded"
     )
     viewer_flags: int = Field(default=0, alias="viewerFlags")
-    chapter_flags: int = Field(default=513, alias="chapterFlags")
+    chapter_flags: int = Field(default=0, alias="chapterFlags")
     update_strategy: int = Field(default=0, alias="updateStrategy")
     favorite: bool = True
     initialized: bool = True

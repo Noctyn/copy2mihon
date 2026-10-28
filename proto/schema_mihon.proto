@@ -1,20 +1,29 @@
 syntax = "proto2";
 
+// Field numbers mirror Mihon v0.21.x backup models
+// (app/src/main/java/eu/kanade/tachiyomi/data/backup/models/).
+// Everything is optional so partial/older backups can be decoded and
+// re-serialized without tripping over required-field checks.
+
 package mihon;
+
+enum UpdateStrategy {
+  ALWAYS_UPDATE = 0;
+  ONLY_FETCH_ONCE = 1;
+}
 
 message Backup {
   repeated BackupManga backupManga = 1;
   repeated BackupCategory backupCategories = 2;
-  repeated BackupExtension backupExtensions = 100;
-  repeated BrokenBackupExtension backupBrokenExtensions = 101;
-  repeated BackupSource backupSources = 102;
-  repeated BackupPreference backupPreferences = 103;
-  repeated BackupSourcePreferences backupSourcePreferences = 104;
+  repeated BackupSource backupSources = 101;
+  repeated BackupPreference backupPreferences = 104;
+  repeated BackupSourcePreferences backupSourcePreferences = 105;
+  repeated BackupExtensionStore backupExtensionStores = 106;
 }
 
 message BackupManga {
-  required int64 source = 1;
-  required string url = 2;
+  optional int64 source = 1;
+  optional string url = 2;
   optional string title = 3 [default = ""];
   optional string artist = 4;
   optional string author = 5;
@@ -25,24 +34,27 @@ message BackupManga {
   optional int64 dateAdded = 13 [default = 0];
   optional int32 viewer = 14 [default = 0];
   repeated BackupChapter chapters = 16;
-  repeated int32 categories = 17;
+  repeated int64 categories = 17;
   repeated BackupTracking tracking = 18;
   optional bool favorite = 100 [default = true];
   optional int32 chapterFlags = 101 [default = 0];
-  repeated BrokenBackupHistory brokenHistory = 102;
-  optional int32 viewer_flags = 103 [default = 0];
+  optional int32 viewer_flags = 103;
   repeated BackupHistory history = 104;
-  optional int32 updateStrategy = 105 [default = 0];
+  optional UpdateStrategy updateStrategy = 105 [default = ALWAYS_UPDATE];
+  // Abandoned in Mihon but still written by Komikku; kept as passthrough.
   optional int64 lastModifiedAt = 106;
-  optional bool initialized = 107 [default = true];
+  optional int64 favoriteModifiedAt = 107;
   repeated string excludedScanlators = 108;
-  optional int64 version = 109 [default = 0];
-  repeated bytes memo = 110;
+  optional int64 version = 109;
+  optional string notes = 110 [default = ""];
+  optional bool initialized = 111 [default = false];
+  optional bytes memo = 112;
+  optional int64 nextUpdate = 113 [default = 0];
 }
 
 message BackupChapter {
-  required string url = 1;
-  required string name = 2;
+  optional string url = 1;
+  optional string name = 2;
   optional string scanlator = 3;
   optional bool read = 4 [default = false];
   optional bool bookmark = 5 [default = false];
@@ -51,33 +63,33 @@ message BackupChapter {
   optional int64 dateUpload = 8 [default = 0];
   optional float chapterNumber = 9 [default = 0];
   optional int64 sourceOrder = 10 [default = 0];
+  // Abandoned in Mihon but still written by Komikku; kept as passthrough.
   optional int64 lastModifiedAt = 11;
-  optional int64 version = 12 [default = 0];
-  repeated bytes memo = 13;
+  optional int64 version = 12;
+  optional bytes memo = 13;
 }
 
 message BackupCategory {
-  required string name = 1;
-  optional int32 order = 2 [default = 0];
-  optional int32 flags = 100 [default = 0];
-  optional int64 id = 101;
+  optional string name = 1;
+  optional int64 order = 2 [default = 0];
+  optional int64 id = 3 [default = 0];
+  optional int64 flags = 100 [default = 0];
 }
 
 message BackupHistory {
-  required string url = 1;
-  required int64 lastRead = 2;
+  optional string url = 1;
+  optional int64 lastRead = 2;
   optional int64 readDuration = 3 [default = 0];
 }
 
-message BrokenBackupHistory {
-  required string url = 1;
-  required int64 lastRead = 2;
-  optional int64 readDuration = 3 [default = 0];
+message BackupSource {
+  optional string name = 1;
+  optional int64 sourceId = 2;
 }
 
 message BackupTracking {
-  required int32 syncId = 1;
-  required int64 libraryId = 2;
+  optional int32 syncId = 1;
+  optional int64 libraryId = 2;
   optional int32 mediaIdInt = 3 [default = 0];
   optional string trackingUrl = 4 [default = ""];
   optional string title = 5 [default = ""];
@@ -87,43 +99,34 @@ message BackupTracking {
   optional int32 status = 9 [default = 0];
   optional int64 startedReadingDate = 10 [default = 0];
   optional int64 finishedReadingDate = 11 [default = 0];
-  optional string mediaId = 100 [default = "0"];
-}
-
-message BackupExtension {
-  required string pkgName = 1;
-  required string name = 2;
-  required string versionName = 3;
-  required int64 versionCode = 4;
-  required string libVersion = 5;
-  optional string iconUrl = 6;
-}
-
-message BrokenBackupExtension {
-  required string pkgName = 1;
-  required string name = 2;
-  required string versionName = 3;
-  required int64 versionCode = 4;
-  required string libVersion = 5;
-  optional string iconUrl = 6;
-}
-
-message BackupSource {
-  optional string name = 1 [default = ""];
-  required int64 sourceId = 2;
+  optional bool private = 12 [default = false];
+  optional int64 mediaId = 100 [default = 0];
 }
 
 message BackupPreference {
-  required string key = 1;
-  required PreferenceValue value = 2;
+  optional string key = 1;
+  optional PreferenceValue value = 2;
+}
+
+// kotlinx.serialization stores the sealed PreferenceValue union as
+// { type: <subclass name>, truevalue: <encoded value> }.
+message PreferenceValue {
+  optional string type = 1;
+  optional bytes truevalue = 2;
 }
 
 message BackupSourcePreferences {
-  required string sourceKey = 1;
+  optional string sourceKey = 1;
   repeated BackupPreference prefs = 2;
 }
 
-message PreferenceValue {
-  required string type = 1;
-  required bytes truevalue = 2;
+message BackupExtensionStore {
+  optional string indexUrl = 1;
+  optional string name = 2;
+  optional string badgeLabel = 3;
+  optional string signingKey = 5;
+  optional string contactWebsite = 4;
+  optional string contactDiscord = 6;
+  optional bool isLegacy = 7;
+  optional string extensionListUrl = 8;
 }

@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import re
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -57,9 +57,9 @@ def extract_token(token_or_auth: str) -> str:
     return raw
 
 
-def clean_path(path_str: str) -> str:
+def clean_path(path_str: Union[str, Path]) -> str:
     """Strip surrounding whitespace and quotes from a filesystem path."""
-    return path_str.strip().strip("\"'")
+    return str(path_str).strip().strip("\"'")
 
 
 def normalize_path_word(raw: Optional[str]) -> str:
@@ -108,7 +108,6 @@ def extract_path_word(
         or c_data.get("url")
         or item.get("url")
         or (f"id_{c_data.get('id')}" if c_data.get("id") else None)
-        or (f"name_{c_data.get('name')}" if c_data.get("name") else None)
         or ""
     )
     pw = normalize_path_word(raw_pw)
@@ -118,6 +117,58 @@ def extract_path_word(
             f"Could not find valid path_word for item, generated stable fallback identifier: {pw}"
         )
     return pw
+
+
+def extract_chapter_ref(
+    item: Dict[str, Any],
+    comic_data: Optional[Dict[str, Any]] = None,
+) -> Tuple[Optional[str], str]:
+    """Extract the referenced chapter id and name across CopyManga payload variants."""
+    c_data = comic_data or (item.get("comic", item) if isinstance(item, dict) else {})
+    if not isinstance(c_data, dict):
+        c_data = {}
+
+    chapter = item.get("chapter") if isinstance(item.get("chapter"), dict) else {}
+    last_chapter = c_data.get("last_chapter") if isinstance(c_data.get("last_chapter"), dict) else {}
+
+    raw_id = (
+        item.get("last_chapter_id")
+        or item.get("chapter_id")
+        or item.get("chapter_uuid")
+        or chapter.get("uuid")
+        or chapter.get("id")
+        or last_chapter.get("uuid")
+        or last_chapter.get("id")
+    )
+    raw_name = (
+        item.get("last_chapter_name")
+        or item.get("chapter_name")
+        or chapter.get("name")
+        or last_chapter.get("name")
+        or ""
+    )
+
+    chapter_id = str(raw_id).strip() if raw_id else None
+    chapter_name = repair_mojibake(str(raw_name)).strip() if raw_name else ""
+    return chapter_id, chapter_name
+
+
+def extract_read_time(
+    item: Dict[str, Any],
+    comic_data: Optional[Dict[str, Any]] = None,
+) -> Any:
+    """Extract the last-read timestamp across CopyManga payload variants."""
+    c_data = comic_data or (item.get("comic", item) if isinstance(item, dict) else {})
+    if not isinstance(c_data, dict):
+        c_data = {}
+
+    return (
+        item.get("datetime_modifier")
+        or item.get("last_read_time")
+        or item.get("browse_time")
+        or item.get("datetime_updated")
+        or c_data.get("datetime_updated")
+    )
 
 
 def repair_mojibake(text: Optional[str]) -> str:

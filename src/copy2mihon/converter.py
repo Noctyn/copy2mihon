@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 from pathlib import Path
@@ -20,13 +20,25 @@ from copy2mihon.models import (
     MihonManga,
     MihonSource,
 )
-from copy2mihon.parser import extract_path_word, normalize_path_word, repair_mojibake
+from copy2mihon.parser import (
+    extract_chapter_ref,
+    extract_path_word,
+    extract_read_time,
+    normalize_path_word,
+    repair_mojibake,
+)
 
 logger = logging.getLogger(__name__)
 
+# CopyManga returns naive local timestamps (Beijing time) without an offset.
+SOURCE_TIMEZONE = timezone(timedelta(hours=8))
+
 
 def parse_datetime_to_ms(dt_val: Any) -> int:
-    """Parse various datetime representations into milliseconds timestamp."""
+    """Parse various datetime representations into milliseconds timestamp.
+
+    Naive datetimes are interpreted as CopyManga's local time (UTC+8).
+    """
     if not dt_val:
         return int(time.time() * 1000)
 
@@ -57,10 +69,18 @@ def parse_datetime_to_ms(dt_val: Any) -> int:
             try:
                 dt = datetime.strptime(val_str, fmt)
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.replace(tzinfo=SOURCE_TIMEZONE)
                 return int(dt.timestamp() * 1000)
             except ValueError:
                 continue
+
+        try:
+            dt = datetime.fromisoformat(val_str.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=SOURCE_TIMEZONE)
+            return int(dt.timestamp() * 1000)
+        except ValueError:
+            pass
 
     return int(time.time() * 1000)
 
@@ -70,16 +90,16 @@ def extract_authors(author_field: Any) -> str:
     if not author_field:
         return ""
     if isinstance(author_field, str):
-        return repair_mojibake(author_field.strip())
+        return repair_mojibake(author_field).strip()
     if isinstance(author_field, list):
         names = []
         for item in author_field:
             if isinstance(item, dict):
                 n = item.get("name") or item.get("author_name") or ""
                 if n:
-                    names.append(repair_mojibake(str(n).strip()))
+                    names.append(repair_mojibake(str(n)).strip())
             elif isinstance(item, str) and item.strip():
-                names.append(repair_mojibake(item.strip()))
+                names.append(repair_mojibake(item).strip())
         return ", ".join(names)
     return ""
 
@@ -92,9 +112,9 @@ def extract_genres(comic_data: Dict[str, Any]) -> List[str]:
     if isinstance(region, dict):
         reg_name = region.get("name")
         if reg_name:
-            genres.append(repair_mojibake(str(reg_name).strip()))
+            genres.append(repair_mojibake(str(reg_name)).strip())
     elif isinstance(region, str) and region.strip():
-        genres.append(repair_mojibake(region.strip()))
+        genres.append(repair_mojibake(region).strip())
 
     theme = comic_data.get("theme")
     if isinstance(theme, list):
@@ -102,9 +122,9 @@ def extract_genres(comic_data: Dict[str, Any]) -> List[str]:
             if isinstance(t, dict):
                 t_name = t.get("name")
                 if t_name:
-                    genres.append(repair_mojibake(str(t_name).strip()))
+                    genres.append(repair_mojibake(str(t_name)).strip())
             elif isinstance(t, str) and t.strip():
-                genres.append(repair_mojibake(t.strip()))
+                genres.append(repair_mojibake(t).strip())
 
     for key in ("tags", "genres", "types", "categories"):
         val = comic_data.get(key)
@@ -113,9 +133,9 @@ def extract_genres(comic_data: Dict[str, Any]) -> List[str]:
                 if isinstance(v, dict):
                     v_name = v.get("name")
                     if v_name:
-                        genres.append(repair_mojibake(str(v_name).strip()))
+                        genres.append(repair_mojibake(str(v_name)).strip())
                 elif isinstance(v, str) and v.strip():
-                    genres.append(repair_mojibake(v.strip()))
+                    genres.append(repair_mojibake(v).strip())
 
     seen = set()
     deduped = []
@@ -126,13 +146,42 @@ def extract_genres(comic_data: Dict[str, Any]) -> List[str]:
     return deduped
 
 
+def _status_from_text(text: str) -> Optional[int]:
+    lowered = text.strip().lower()
+    if (
+        "完结" in lowered
+        or "完結" in lowered
+        or lowered in ("completed", "complete", "finished", "ended", "end")
+    ):
+        return 2
+    if (
+        "连载" in lowered
+        or "連載" in lowered
+        or lowered in ("ongoing", "publishing", "serialization", "serializing")
+    ):
+        return 1
+    return None
+
+
 def normalize_status(status_val: Any) -> int:
-    """Map comic status to Mihon status int (1=ONGOING, 2=COMPLETED)."""
+    """Map comic status to Mihon status int (1=ONGOING, 2=COMPLETED).
+
+    CopyManga returns status as ``{"value": 0, "display": "连载中"}``; the
+    human-readable display text is preferred over the numeric value.
+    Unknown shapes fall back to ONGOING instead of silently marking completed.
+    """
     if status_val is None:
         return 1
 
     if isinstance(status_val, dict):
-        status_val = status_val.get("value", status_val.get("name", 1))
+        display = status_val.get("display")
+        if isinstance(display, str):
+            parsed = _status_from_text(display)
+            if parsed is not None:
+                return parsed
+        status_val = status_val.get("value", status_val.get("name"))
+        if status_val is None:
+            return 1
 
     if isinstance(status_val, (int, float)):
         s_int = int(status_val)
@@ -143,11 +192,12 @@ def normalize_status(status_val: Any) -> int:
         return 1
 
     if isinstance(status_val, str):
-        s_lower = status_val.lower()
-        if "完结" in s_lower or "completed" in s_lower or "end" in s_lower:
-            return 2
-        if "连载" in s_lower or "ongoing" in s_lower:
-            return 1
+        cleaned = status_val.strip()
+        if cleaned.isdigit():
+            return normalize_status(int(cleaned))
+        parsed = _status_from_text(cleaned)
+        if parsed is not None:
+            return parsed
 
     return 1
 
@@ -158,6 +208,23 @@ def normalize_manga_url(path_word: str) -> str:
     if not clean:
         return ""
     return f"/comic/{clean}"
+
+
+def parse_chapter_number(chapter_name: Optional[str]) -> float:
+    """Extract a chapter number, preferring an explicit 第X话/回/集 marker.
+
+    Volume markers ("第2卷") sometimes precede the real chapter number, so a
+    bare first-number match is unreliable. This mirrors the userscript parser.
+    """
+    if not chapter_name:
+        return 0.0
+    preferred = re.search(r"第\s*(\d+(?:\.\d+)?)\s*(?:话|話|回|集)", chapter_name)
+    if preferred:
+        return float(preferred.group(1))
+    all_numbers = re.findall(r"\d+(?:\.\d+)?", chapter_name)
+    if all_numbers:
+        return float(all_numbers[-1])
+    return 0.0
 
 
 def create_chapter_and_history(
@@ -175,13 +242,7 @@ def create_chapter_and_history(
     ch_name = repair_mojibake(chapter_name) or "阅读历史"
     time_ms = read_time_ms or int(time.time() * 1000)
 
-    ch_num = 0.0
-    num_match = re.search(r"(\d+(\.\d+)?)", ch_name)
-    if num_match:
-        try:
-            ch_num = float(num_match.group(1))
-        except Exception:
-            ch_num = 0.0
+    ch_num = parse_chapter_number(ch_name)
 
     chapter = MihonChapter(
         url=chapter_url,
@@ -267,10 +328,6 @@ def comic_dict_to_mihon_manga(
 
     categories = (category_ids or []) if is_favorite else []
 
-    memo = []
-    if "datetime_modifier" in item:
-        memo.append(b"{}")
-
     manga = MihonManga(
         source=source_id,
         url=url,
@@ -283,24 +340,25 @@ def comic_dict_to_mihon_manga(
         thumbnail_url=thumbnail_url,
         date_added=date_added,
         viewer_flags=0,
-        chapter_flags=513,
+        chapter_flags=0,
         update_strategy=0,
         favorite=is_favorite,
         initialized=True,
         categories=categories,
         chapters=[],
         history=[],
-        memo=memo,
     )
 
-    last_chapter_id = item.get("last_chapter_id")
-    last_chapter_name = item.get("last_chapter_name")
+    read_time_raw = extract_read_time(item, comic_data)
+    read_time_ms = parse_datetime_to_ms(read_time_raw) if read_time_raw else date_added
+
+    last_chapter_id, last_chapter_name = extract_chapter_ref(item, comic_data)
     if last_chapter_id:
         ch, hist = create_chapter_and_history(
             path_word=path_word,
             chapter_id=last_chapter_id,
             chapter_name=last_chapter_name,
-            read_time_ms=date_added,
+            read_time_ms=read_time_ms,
         )
         if ch:
             manga.chapters.append(ch)
@@ -364,11 +422,8 @@ def convert_copymanga_all_to_backup(
             path_word = extract_path_word(b_item, comic_data, fallback=True)
             url = normalize_manga_url(path_word)
 
-            last_ch_id = b_item.get("last_chapter_id")
-            last_ch_name = b_item.get("last_chapter_name")
-            read_time_ms = parse_datetime_to_ms(
-                b_item.get("datetime_modifier") or comic_data.get("datetime_updated")
-            )
+            last_ch_id, last_ch_name = extract_chapter_ref(b_item, comic_data)
+            read_time_ms = parse_datetime_to_ms(extract_read_time(b_item, comic_data))
 
             if url in manga_by_url:
                 existing_manga = manga_by_url[url]
